@@ -3,558 +3,602 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 智能出卷系統 - 全能混合版</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <title>AI 智能出卷系統</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600;700;900&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
-        body { font-family: "Microsoft JhengHei", sans-serif; background-color: #f3f4f6; }
-        .question-item { page-break-inside: avoid !important; break-inside: avoid !important; border-bottom: 1px solid #eee; padding-bottom: 25px; margin-bottom: 25px; }
-        .answer-block { display: none; } 
-        /* 分類區滾動條修復 */
-        #topicsContainer { max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; border-radius: 8px; background: #fff; }
+        :root {
+            --ink: #1a1a2e;
+            --ink-light: #4a4a6a;
+            --paper: #faf9f6;
+            --paper-warm: #f5f2ec;
+            --red: #c0392b;
+            --red-light: #e74c3c;
+            --gold: #b8860b;
+            --blue: #1a4a8a;
+            --blue-light: #2e6db4;
+            --green: #1a6b4a;
+            --border: #d4cfc5;
+            --shadow: rgba(26,26,46,0.10);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Noto Sans TC', sans-serif; background: var(--paper); color: var(--ink); min-height: 100vh; }
+
+        /* Header */
+        .site-header {
+            background: var(--ink); color: #fff;
+            padding: 0 2rem; height: 64px;
+            display: flex; align-items: center; justify-content: space-between;
+            position: sticky; top: 0; z-index: 100;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+        }
+        .logo {
+            font-family: 'Noto Serif TC', serif;
+            font-size: 1.2rem; font-weight: 900; letter-spacing: 0.05em;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .logo-icon {
+            width: 34px; height: 34px; background: var(--red);
+            border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px;
+        }
+        .header-sub { font-size: 0.75rem; color: rgba(255,255,255,0.45); letter-spacing: 0.12em; }
+
+        /* Auth Bar */
+        .auth-bar {
+            background: var(--paper-warm); border-bottom: 1px solid var(--border);
+            padding: 10px 2rem; display: flex; align-items: center;
+            justify-content: space-between; gap: 12px; flex-wrap: wrap;
+        }
+        .auth-status { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: var(--ink-light); }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #bbb; flex-shrink: 0; transition: background 0.3s; }
+        .status-dot.active { background: #27ae60; }
+        .auth-hint { font-size: 0.72rem; color: #aaa; margin-top: 3px; }
+        .auth-controls { display: flex; align-items: center; gap: 8px; }
+        .auth-controls input {
+            padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px;
+            font-size: 0.82rem; font-family: inherit; width: 220px;
+            background: white; color: var(--ink); outline: none; transition: border-color 0.2s;
+        }
+        .auth-controls input:focus { border-color: var(--blue-light); }
+        .btn-sm {
+            padding: 6px 14px; border: none; border-radius: 6px;
+            font-size: 0.82rem; font-family: inherit; font-weight: 700;
+            cursor: pointer; transition: opacity 0.15s, transform 0.1s;
+        }
+        .btn-sm:active { transform: scale(0.97); }
+        .btn-login { background: var(--blue); color: #fff; }
+        .btn-login:hover { background: var(--blue-light); }
+        .btn-login:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+        .btn-logout { background: #e8e3d8; color: var(--ink-light); }
+        .btn-logout:hover { background: #ddd8cc; }
+
+        /* Main */
+        .main-wrap { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+        .page-title { font-family: 'Noto Serif TC', serif; font-size: 1.6rem; font-weight: 900; margin-bottom: 0.3rem; }
+        .page-subtitle { font-size: 0.85rem; color: var(--ink-light); margin-bottom: 2rem; }
+
+        /* Cards */
+        .card { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; box-shadow: 0 2px 8px var(--shadow); }
+        .card-title {
+            font-family: 'Noto Serif TC', serif; font-size: 1rem; font-weight: 700;
+            margin-bottom: 1rem; display: flex; align-items: center; gap: 8px;
+        }
+        .step-badge {
+            background: var(--ink); color: white;
+            font-family: 'Noto Sans TC', sans-serif; font-size: 0.68rem;
+            font-weight: 700; padding: 2px 8px; border-radius: 20px; letter-spacing: 0.06em;
+        }
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin-bottom: 1.5rem; }
+        @media (max-width: 640px) { .two-col { grid-template-columns: 1fr; } }
+
+        /* Selects */
+        .select-row { display: flex; gap: 8px; margin-bottom: 12px; }
+        select {
+            flex: 1; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+            font-family: inherit; font-size: 0.88rem; color: var(--ink);
+            background: white; outline: none; cursor: pointer; transition: border-color 0.2s;
+        }
+        select:focus { border-color: var(--blue-light); }
+
+        /* Topics */
+        #topicsContainer { max-height: 280px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--paper-warm); }
+        .topic-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 8px 12px; border-bottom: 1px solid var(--border); transition: background 0.15s;
+        }
+        .topic-row:last-child { border-bottom: none; }
+        .topic-row:hover { background: #eee9df; }
+        .topic-name { font-size: 0.88rem; }
+        .topic-qty {
+            width: 52px; text-align: center; padding: 4px 6px;
+            border: 1px solid var(--border); border-radius: 6px;
+            font-family: inherit; font-size: 0.88rem; background: white; outline: none;
+        }
+        .topic-qty:focus { border-color: var(--blue-light); }
+        #topicsContainer::-webkit-scrollbar { width: 6px; }
+        #topicsContainer::-webkit-scrollbar-track { background: transparent; }
+        #topicsContainer::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        /* Textarea */
+        textarea {
+            width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+            font-family: inherit; font-size: 0.9rem; color: var(--ink);
+            background: white; resize: vertical; outline: none; line-height: 1.7; transition: border-color 0.2s;
+        }
+        textarea:focus { border-color: var(--blue-light); }
+        textarea::placeholder { color: #ccc; }
+
+        /* Radio */
+        .radio-group { display: flex; gap: 16px; margin-top: 10px; }
+        .radio-label { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--ink-light); cursor: pointer; }
+        .radio-label input { accent-color: var(--blue); cursor: pointer; }
+
+        /* Generate */
+        .generate-wrap { text-align: center; margin: 2rem 0 1.5rem; }
+        .btn-generate {
+            background: var(--red); color: white; border: none;
+            padding: 16px 48px; border-radius: 50px;
+            font-family: 'Noto Serif TC', serif; font-size: 1.15rem; font-weight: 700;
+            cursor: pointer; letter-spacing: 0.08em;
+            box-shadow: 0 4px 20px rgba(192,57,43,0.35);
+            transition: background 0.2s, transform 0.12s, box-shadow 0.2s;
+        }
+        .btn-generate:hover { background: var(--red-light); box-shadow: 0 6px 28px rgba(192,57,43,0.45); transform: translateY(-2px); }
+        .btn-generate:active { transform: scale(0.98); }
+
+        /* Download */
+        .download-row { display: flex; justify-content: center; gap: 12px; margin-bottom: 2rem; }
+        .btn-dl {
+            padding: 10px 24px; border: none; border-radius: 8px;
+            font-family: inherit; font-size: 0.9rem; font-weight: 700;
+            cursor: pointer; display: flex; align-items: center; gap: 6px;
+            transition: opacity 0.15s, transform 0.1s;
+        }
+        .btn-dl:active { transform: scale(0.97); }
+        .btn-dl-student { background: var(--ink); color: white; }
+        .btn-dl-student:hover { opacity: 0.85; }
+        .btn-dl-teacher { background: var(--green); color: white; }
+        .btn-dl-teacher:hover { opacity: 0.85; }
+
+        /* Loading */
+        #loading { text-align: center; padding: 2.5rem; color: var(--blue-light); font-weight: 700; display: none; }
+        .spinner {
+            display: inline-block; width: 22px; height: 22px;
+            border: 3px solid rgba(46,109,180,0.2); border-top-color: var(--blue-light);
+            border-radius: 50%; animation: spin 0.7s linear infinite;
+            margin-right: 10px; vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Print area */
+        #pdfPrintArea { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 48px; box-shadow: 0 2px 12px var(--shadow); display: none; }
+        .question-item { page-break-inside: avoid !important; break-inside: avoid !important; margin-bottom: 22px; }
+        .answer-block { display: none; }
+
         @media print { .no-print { display: none !important; } }
     </style>
 </head>
-<body class="p-8">
+<body>
 
-    <div class="max-w-4xl mx-auto">
-        <div class="no-print">
-            <h1 class="text-3xl font-bold text-blue-600 mb-2">📚 AI 智能混合出卷系統</h1>
-            <p class="text-gray-600 mb-8">支援 題庫抽題 + 自訂詞語 同時出卷</p>
+<header class="site-header no-print">
+    <div class="logo">
+        <div class="logo-icon">📚</div>
+        AI 智能出卷系統
+    </div>
+    <div class="header-sub">JUNYAN EDU · AI QUIZ</div>
+</header>
+
+<div class="auth-bar no-print">
+    <div>
+        <div class="auth-status">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="authStatus">狀態：讀取中…</span>
         </div>
+        <div class="auth-hint">登入後可跨裝置追蹤已出題紀錄，避免重複出題</div>
+    </div>
+    <div class="auth-controls">
+        <input id="emailInput" type="email" placeholder="輸入電郵以 Magic Link 登入">
+        <button id="loginBtn" class="btn-sm btn-login">登入</button>
+        <button id="logoutBtn" class="btn-sm btn-logout hidden">登出</button>
+    </div>
+</div>
 
-        <div class="no-print bg-white p-4 rounded-lg shadow-sm border mb-6">
-            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                <div>
-                    <div class="font-bold text-gray-800">跨裝置不重複（登入）</div>
-                    <div id="authStatus" class="text-sm text-gray-600">狀態：讀取中…</div>
-                </div>
-                <div class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
-                    <input id="emailInput" type="email" class="border p-2 rounded w-full sm:w-64" placeholder="輸入電郵以登入（Magic Link）">
-                    <button id="loginBtn" class="bg-blue-600 text-white px-4 py-2 rounded font-bold">登入</button>
-                    <button id="logoutBtn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded font-bold hidden">登出</button>
-                </div>
+<div class="main-wrap">
+
+    <div class="no-print">
+        <h1 class="page-title">混合出卷</h1>
+        <p class="page-subtitle">從題庫抽題 ＋ AI 生成自訂詞語填充，一鍵產生試卷</p>
+    </div>
+
+    <div class="two-col no-print">
+        <div class="card">
+            <div class="card-title">
+                <span class="step-badge">STEP 1</span>從題庫選題
             </div>
-            <div id="authHint" class="text-xs text-gray-500 mt-2">
-                提示：如果你由匿名帳戶轉做正式登入，我會自動嘗試搬移你已出過題嘅記錄到新帳戶。
+            <div class="select-row">
+                <select id="gradeSelect" onchange="updateSubjectList()"></select>
+                <select id="subjectSelect" onchange="updateTopicList()"></select>
+            </div>
+            <div id="topicsContainer">
+                <div style="padding:20px;text-align:center;color:#ccc;font-size:0.85rem;">載入中…</div>
             </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 no-print">
-            <div class="bg-white p-6 rounded-lg shadow-md border-t-4 border-blue-500">
-                <h2 class="text-xl font-bold mb-4">第一步：從題庫選題</h2>
-                <div class="flex gap-2 mb-4">
-                    <select id="gradeSelect" onchange="updateSubjectList()" class="border p-2 rounded w-1/2"></select>
-                    <select id="subjectSelect" onchange="updateTopicList()" class="border p-2 rounded w-1/2"></select>
-                </div>
-                <div id="topicsContainer" class="space-y-2 mb-4 text-sm text-gray-700">
-                    </div>
+        <div class="card">
+            <div class="card-title">
+                <span class="step-badge">STEP 2</span>
+                自訂詞語填充
+                <span style="font-size:0.72rem;color:#aaa;font-family:'Noto Sans TC';font-weight:400;">AI 生成句子</span>
             </div>
-
-            <div class="bg-blue-50 p-6 rounded-lg shadow-md border-t-4 border-indigo-500">
-                <h2 class="text-xl font-bold mb-4 text-indigo-800">第二步：自訂詞語填充</h2>
-                <p class="text-xs text-indigo-600 mb-2">輸入詞語（用空格分開）：</p>
-                <textarea id="customWords" class="w-full p-3 border rounded-md mb-4 text-sm" rows="4" placeholder="例如：欣賞 鼓勵 意志"></textarea>
-                <div class="flex gap-2">
-                    <label class="text-sm"><input type="radio" name="customType" value="FillBlank" checked> 供詞</label>
-                    <label class="text-sm"><input type="radio" name="customType" value="FillBlankNoHint"> 不供詞</label>
-                </div>
+            <textarea id="customWords" rows="6" placeholder="輸入詞語，用空格或換行分開&#10;&#10;例如：欣賞　鼓勵　意志　堅持"></textarea>
+            <div class="radio-group">
+                <label class="radio-label">
+                    <input type="radio" name="customType" value="FillBlank" checked> 供詞填充
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="customType" value="FillBlankNoHint"> 不供詞填充
+                </label>
             </div>
-        </div>
-
-        <div class="my-8 text-center no-print">
-            <button onclick="masterGenerate()" class="bg-red-600 text-white px-10 py-4 rounded-full font-bold text-xl shadow-lg hover:bg-red-700 transition">
-                🚀 生成混合試卷
-            </button>
-        </div>
-
-        <div class="flex justify-center gap-4 mb-8 no-print">
-            <button id="downloadStudentBtn" onclick="generatePDF('student')" class="bg-gray-800 text-white px-6 py-2 rounded font-bold hidden">🖨️ 下載學生版</button>
-            <button id="downloadTeacherBtn" onclick="generatePDF('teacher')" class="bg-green-600 text-white px-6 py-2 rounded font-bold hidden">📝 下載答案版</button>
-        </div>
-
-        <div id="loading" class="hidden text-center text-blue-600 font-bold my-8">⏳ AI 正在拼命排版中...</div>
-        
-        <div id="pdfPrintArea" class="bg-white p-12 rounded-lg shadow-sm hidden">
-            <div id="questionsContainer"></div>
         </div>
     </div>
 
-    <script>
-        const SUPABASE_URL = 'https://zasjttnsvqebepszpfua.supabase.co'; 
-        const SUPABASE_KEY = 'sb_publishable_mNcxBYS-z85Y1529nCgz7A_5DAewmV7';
-        const dbClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    <div class="generate-wrap no-print">
+        <button onclick="masterGenerate()" class="btn-generate">🚀 生成混合試卷</button>
+    </div>
 
-        let databaseStructure = {};
+    <div class="download-row no-print">
+        <button id="downloadStudentBtn" onclick="generatePDF('student')" class="btn-dl btn-dl-student hidden">🖨️ 下載學生版</button>
+        <button id="downloadTeacherBtn" onclick="generatePDF('teacher')" class="btn-dl btn-dl-teacher hidden">📝 下載答案版</button>
+    </div>
 
-        function isBannedTopic(topic) {
-            const t = (topic ?? '').toString().trim();
-            if (!t) return false;
-            return /連接詞/.test(t);
+    <div id="loading"><span class="spinner"></span>AI 正在拼命排版中…</div>
+
+    <div id="pdfPrintArea">
+        <div id="questionsContainer"></div>
+    </div>
+
+</div>
+
+<script>
+    const SUPABASE_URL = 'https://zasjttnsvqebepszpfua.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_mNcxBYS-z85Y1529nCgz7A_5DAewmV7';
+    const dbClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let databaseStructure = {};
+
+    function isBannedTopic(topic) {
+        const t = (topic ?? '').toString().trim();
+        if (!t) return false;
+        return /連接詞/.test(t);
+    }
+
+    function shuffleInPlace(arr) {
+        for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
         }
+        return arr;
+    }
 
-        function shuffleInPlace(arr) {
-            for (let i = arr.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [arr[i], arr[j]] = [arr[j], arr[i]];
-            }
-            return arr;
+    function getSectionLabel(sectionIdx) {
+        const labels = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸'];
+        if (sectionIdx >= 1 && sectionIdx <= labels.length) return `${labels[sectionIdx - 1]}部`;
+        return `第${sectionIdx}部`;
+    }
+
+    function getQuestionKey(q) {
+        if (q && (typeof q.id === 'number' || typeof q.id === 'string')) return String(q.id);
+        if (q && typeof q.question_text === 'string') return `${q.topic ?? ''}|${q.type ?? ''}|${q.question_text}`;
+        return JSON.stringify(q);
+    }
+
+    async function ensureAnonymousAuth() {
+        const { data } = await dbClient.auth.getSession();
+        if (data?.session) return data.session;
+        const signedIn = await dbClient.auth.signInAnonymously();
+        if (signedIn.error) throw signedIn.error;
+        return signedIn.data.session;
+    }
+
+    function getUserLabel(user) {
+        if (!user) return '未登入';
+        const email = user.email;
+        if (email) return `已登入：${email}`;
+        return user.is_anonymous ? `匿名使用者：${user.id.slice(0, 8)}…` : `已登入：${user.id.slice(0, 8)}…`;
+    }
+
+    async function updateAuthUI() {
+        const status = document.getElementById('authStatus');
+        const dot = document.getElementById('statusDot');
+        const loginBtn = document.getElementById('loginBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const { data } = await dbClient.auth.getSession();
+        const user = data?.session?.user || null;
+        status.textContent = `狀態：${getUserLabel(user)}`;
+        if (user && !user.is_anonymous) {
+            dot.classList.add('active');
+            logoutBtn.classList.remove('hidden');
+            loginBtn.disabled = true;
+        } else {
+            dot.classList.remove('active');
+            logoutBtn.classList.add('hidden');
+            loginBtn.disabled = false;
         }
+    }
 
-        function getQuestionKey(q) {
-            if (q && (typeof q.id === 'number' || typeof q.id === 'string')) return String(q.id);
-            if (q && (typeof q.question_text === 'string')) return `${q.topic ?? ''}|${q.type ?? ''}|${q.question_text}`;
-            return JSON.stringify(q);
-        }
+    async function fetchOwnHistoryQuestionIds(uid, limit = 5000) {
+        const { data, error } = await dbClient.from('user_history').select('question_id').eq('user_id', String(uid)).limit(limit);
+        if (error) throw error;
+        return Array.isArray(data) ? data.map(r => r.question_id).filter(x => x != null) : [];
+    }
 
-        async function ensureAnonymousAuth() {
-            const { data } = await dbClient.auth.getSession();
-            if (data?.session) return data.session;
-
-            const signedIn = await dbClient.auth.signInAnonymously();
-            if (signedIn.error) throw signedIn.error;
-            return signedIn.data.session;
-        }
-
-        function getUserLabel(user) {
-            if (!user) return '未登入';
-            const isAnon = !!user.is_anonymous;
-            const email = user.email;
-            if (email) return `已登入：${email}`;
-            return isAnon ? `匿名使用者：${user.id.slice(0, 8)}…` : `已登入：${user.id.slice(0, 8)}…`;
-        }
-
-        async function updateAuthUI() {
-            const status = document.getElementById('authStatus');
-            const loginBtn = document.getElementById('loginBtn');
-            const logoutBtn = document.getElementById('logoutBtn');
-            const { data } = await dbClient.auth.getSession();
-            const user = data?.session?.user || null;
-            status.textContent = `狀態：${getUserLabel(user)}`;
-
-            if (user && !user.is_anonymous) {
-                logoutBtn.classList.remove('hidden');
-                loginBtn.disabled = true;
-                loginBtn.classList.add('opacity-50', 'cursor-not-allowed');
-            } else {
-                logoutBtn.classList.add('hidden');
-                loginBtn.disabled = false;
-                loginBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
-        }
-
-        async function fetchOwnHistoryQuestionIds(uid, limit = 5000) {
-            const { data, error } = await dbClient
-                .from('user_history')
-                .select('question_id')
-                .eq('user_id', String(uid))
-                .limit(limit);
-
-            if (error) throw error;
-            return Array.isArray(data) ? data.map(r => r.question_id).filter(x => x !== null && x !== undefined) : [];
-        }
-
-        async function signInWithEmailMagicLink(email) {
-            const { data: sessData } = await dbClient.auth.getSession();
-            const currentUser = sessData?.session?.user || null;
-            const currentUid = currentUser?.id ? String(currentUser.id) : null;
-            const isAnon = !!currentUser?.is_anonymous;
-
-            let anonHistory = [];
-            if (currentUid && isAnon) {
-                try {
-                    anonHistory = await fetchOwnHistoryQuestionIds(currentUid, 5000);
-                    localStorage.setItem('pending_history_migration', JSON.stringify({ fromUid: currentUid, qids: anonHistory, ts: Date.now() }));
-                } catch (e) {
-                    console.error('讀取匿名歷史失敗（稍後不會搬移）:', e);
-                }
-            }
-
-            const { error } = await dbClient.auth.signInWithOtp({
-                email,
-                options: { emailRedirectTo: window.location.href }
-            });
-            if (error) throw error;
-        }
-
-        async function migratePendingHistoryIfAny() {
-            const raw = localStorage.getItem('pending_history_migration');
-            if (!raw) return;
-            let parsed;
-            try { parsed = JSON.parse(raw); } catch { return; }
-            if (!parsed || !Array.isArray(parsed.qids)) return;
-
-            const { data } = await dbClient.auth.getSession();
-            const user = data?.session?.user || null;
-            const uid = user?.id ? String(user.id) : null;
-            if (!uid || user?.is_anonymous) return;
-
-            const rows = parsed.qids
-                .map(qid => ({ user_id: uid, question_id: Number(qid) }))
-                .filter(r => Number.isFinite(r.question_id));
-
-            if (rows.length > 0) {
-                const { error } = await dbClient.from('user_history').insert(rows, { ignoreDuplicates: true });
-                if (error) console.error('搬移歷史失敗:', error);
-            }
-
-            localStorage.removeItem('pending_history_migration');
-        }
-
-        // 1. 初始化讀取題庫
-        async function loadFilterOptions() {
-            const { data, error } = await dbClient.from('questions').select('grade, subject, topic');
-            if (error) return;
-            data.forEach(row => {
-                if (isBannedTopic(row.topic)) return;
-                if (!databaseStructure[row.grade]) databaseStructure[row.grade] = {};
-                if (!databaseStructure[row.grade][row.subject]) databaseStructure[row.grade][row.subject] = new Set();
-                databaseStructure[row.grade][row.subject].add(row.topic);
-            });
-            const gSelect = document.getElementById('gradeSelect');
-            gSelect.innerHTML = Object.keys(databaseStructure).sort().map(g => `<option value="${g}">${g}</option>`).join('');
-            updateSubjectList();
-        }
-
-        function updateSubjectList() {
-            const g = document.getElementById('gradeSelect').value;
-            const sSelect = document.getElementById('subjectSelect');
-            sSelect.innerHTML = Object.keys(databaseStructure[g]).map(s => `<option value="${s}">${s}</option>`).join('');
-            updateTopicList();
-        }
-
-        function updateTopicList() {
-            const g = document.getElementById('gradeSelect').value;
-            const s = document.getElementById('subjectSelect').value;
-            const container = document.getElementById('topicsContainer');
-            container.innerHTML = Array.from(databaseStructure[g][s]).map(t => `
-                <div class="flex justify-between items-center border-b pb-1">
-                    <span>${t}</span>
-                    <input type="number" min="0" max="40" value="0" class="topic-qty border w-12 text-center" data-topic="${t}">
-                </div>
-            `).join('');
-        }
-
-        // 2. 混合生成邏輯
-        async function masterGenerate() {
-            const loading = document.getElementById('loading');
-            const container = document.getElementById('questionsContainer');
-            loading.classList.remove('hidden');
-            container.innerHTML = '';
-
-            let finalHtml = `<div class="text-center mb-10 border-b-2 border-black pb-4">
-                                <h2 class="text-3xl font-bold">中文科 綜合能力測試</h2>
-                                <p class="mt-2 text-right">姓名：___________ 班別：_______</p>
-                             </div>`;
-            
-            let globalIdx = 1;
-
-// --- 部分 A：題庫題目 (修正版) ---
-            let session;
+    async function signInWithEmailMagicLink(email) {
+        const { data: sessData } = await dbClient.auth.getSession();
+        const currentUser = sessData?.session?.user || null;
+        const currentUid = currentUser?.id ? String(currentUser.id) : null;
+        if (currentUid && currentUser?.is_anonymous) {
             try {
-                session = await ensureAnonymousAuth();
-            } catch (e) {
-                console.error("匿名登入失敗:", e);
-                finalHtml += `<p class="text-red-500 p-4">⚠️ 無法登入（匿名），所以未能啟用「跨次不重複」功能。</p>`;
-            }
-            const uid = session?.user?.id ? String(session.user.id) : null;
-
-            const g = document.getElementById('gradeSelect').value;
-            const s = document.getElementById('subjectSelect').value;
-            const qtyInputs = document.querySelectorAll('.topic-qty');
-            const RANDOM_POOL_SIZE = 50;
-            const BATCH_SIZE = 100;
-            const MAX_FETCH = 500;
-            const usedQuestionKeys = new Set();
-            const usedQuestionIds = new Set();
-
-            if (uid) {
-                const { data: hist, error: histError } = await dbClient
-                    .from('user_history')
-                    .select('question_id')
-                    .eq('user_id', uid)
-                    .limit(5000);
-
-                if (histError) {
-                    console.error("讀取歷史失敗:", histError);
-                } else if (Array.isArray(hist)) {
-                    hist.forEach(r => {
-                        if (r?.question_id !== null && r?.question_id !== undefined) {
-                            usedQuestionIds.add(String(r.question_id));
-                            usedQuestionKeys.add(String(r.question_id));
-                        }
-                    });
-                }
-            }
-            
-            for (let input of qtyInputs) {
-                let qty = parseInt(input.value);
-                if (!Number.isFinite(qty)) qty = 0;
-                qty = Math.max(0, Math.min(40, qty));
-                if (qty > 0) {
-                    const topic = input.dataset.topic;
-                    if (isBannedTopic(topic)) continue;
-
-                    let pool = [];
-                    let offset = 0;
-                    const wantedPool = Math.max(RANDOM_POOL_SIZE, qty * 3);
-                    const fetchLimit = Math.min(MAX_FETCH, Math.max(wantedPool, BATCH_SIZE));
-
-                    while (pool.length < fetchLimit) {
-                        const { data, error } = await dbClient
-                            .from('questions')
-                            .select('*')
-                            .eq('grade', g)
-                            .eq('subject', s)
-                            .eq('topic', topic)
-                            .range(offset, offset + BATCH_SIZE - 1);
-
-                        if (error) {
-                            console.error("讀取失敗:", error);
-                            break;
-                        }
-
-                        if (!data || data.length === 0) break;
-
-                        pool = pool.concat(data);
-                        offset += BATCH_SIZE;
-
-                        if (data.length < BATCH_SIZE) break;
-                    }
-
-                    if (pool.length > 0) {
-                        const shuffled = shuffleInPlace([...pool]);
-                        const picked = [];
-
-                        for (const q of shuffled) {
-                            const key = getQuestionKey(q);
-                            const qid = (q && (typeof q.id === 'number' || typeof q.id === 'string')) ? String(q.id) : null;
-                            if (qid && usedQuestionIds.has(qid)) continue;
-                            if (usedQuestionKeys.has(key)) continue;
-                            usedQuestionKeys.add(key);
-                            if (qid) usedQuestionIds.add(qid);
-                            picked.push(q);
-                            if (picked.length >= qty) break;
-                        }
-
-                        if (picked.length === 0) continue;
-
-                        finalHtml += `<h3 class="text-xl font-bold mb-4 mt-6 bg-gray-100 p-2 border-l-4 border-blue-600">部分：${topic}</h3>`;
-                        picked.forEach(q => {
-                            finalHtml += renderUniversal(q, globalIdx++);
-                        });
-
-                        if (uid) {
-                            const rows = picked
-                                .map(q => (q && (typeof q.id === 'number' || typeof q.id === 'string')) ? ({ user_id: uid, question_id: Number(q.id) }) : null)
-                                .filter(Boolean);
-
-                            if (rows.length > 0) {
-                                const { error: insertError } = await dbClient
-                                    .from('user_history')
-                                    .insert(rows, { ignoreDuplicates: true });
-
-                                if (insertError) {
-                                    console.error("寫入歷史失敗:", insertError);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-// --- 部分 B：自訂詞語 (Serverless 代理生成) ---
-            const customWords = document.getElementById('customWords').value.trim();
-            if (customWords) {
-                const words = customWords.split(/[ ,，、\n]+/).filter(w => w.length > 0);
-                const type = document.querySelector('input[name="customType"]:checked').value;
-
-                finalHtml += `<h3 class="text-xl font-bold mb-4 mt-8 bg-gray-100 p-2 border-l-4 border-indigo-600">部分：詞語填充練習 (AI 生成)</h3>`;
-                
-                if (type === 'FillBlank') {
-                    finalHtml += `<div class="border-2 border-black p-4 mb-6 text-center font-bold tracking-widest text-xl">
-                                    詞語庫：${words.join('　')}</div>`;
-                }
-
-                try {
-                    if (window.location.protocol === 'file:') {
-                        throw new Error('你而家係用 file:// 直接開頁面，無法使用 /api/generate-sentences。請用已部署到 Vercel 嘅網址開，或用本地伺服器（例如 Live Server）開頁面。');
-                    }
-
-                    const response = await fetch('/api/generate-sentences', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            words,
-                            type,
-                            model: "openai/gpt-4o-mini"
-                        })
-                    });
-
-                    const data = await response.json();
-                    if (!response.ok || data?.error) {
-                        throw new Error(data?.error?.message || `API error (${response.status})`);
-                    }
-
-                    const aiSentences = Array.isArray(data.sentences) ? data.sentences : [];
-
-                    words.forEach((w, i) => {
-                        let sentence = aiSentences[i] || `請運用詞語「${w}」造句並填空。 ( ________ )`;
-                        
-                        finalHtml += `
-                            <div class="question-item">
-                                <div class="flex items-start">
-                                    <span class="text-xl font-bold mr-2">${globalIdx++}.</span>
-                                    <p class="text-xl leading-loose flex-1">${sentence}</p>
-                                </div>
-                                <div class="answer-block p-4 bg-yellow-50 border-l-4 border-yellow-400 mt-2">
-                                    <span class="font-bold text-yellow-800">💡 建議答案：</span> 
-                                    <span class="text-xl font-bold">${w}</span>
-                                </div>
-                            </div>`;
-                    });
-                } catch (error) {
-                    console.error("AI 生成失敗:", error);
-                    const msg = (error && error.message) ? error.message : String(error);
-                    const help = /Failed to fetch/i.test(msg)
-                        ? '（通常係未部署 /api、網絡被擋、或用 file:// 開頁面）'
-                        : '';
-                    finalHtml += `<p class="text-red-500 p-4">⚠️ AI 生成出錯：${msg} ${help}</p>`;
-                }
-            }
-            container.innerHTML = finalHtml;
-            document.getElementById('pdfPrintArea').classList.remove('hidden');
-            document.getElementById('downloadStudentBtn').classList.remove('hidden');
-            document.getElementById('downloadTeacherBtn').classList.remove('hidden');
-            loading.classList.add('hidden');
+                const anonHistory = await fetchOwnHistoryQuestionIds(currentUid, 5000);
+                localStorage.setItem('pending_history_migration', JSON.stringify({ fromUid: currentUid, qids: anonHistory, ts: Date.now() }));
+            } catch(e) { console.error('讀取匿名歷史失敗:', e); }
         }
+        const { error } = await dbClient.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href } });
+        if (error) throw error;
+    }
 
-        // 3. 全能渲染器
-function renderUniversal(q, idx) {
-            let body = '';
+    async function migratePendingHistoryIfAny() {
+        const raw = localStorage.getItem('pending_history_migration');
+        if (!raw) return;
+        let parsed;
+        try { parsed = JSON.parse(raw); } catch { return; }
+        if (!parsed || !Array.isArray(parsed.qids)) return;
+        const { data } = await dbClient.auth.getSession();
+        const user = data?.session?.user || null;
+        const uid = user?.id ? String(user.id) : null;
+        if (!uid || user?.is_anonymous) return;
+        const rows = parsed.qids.map(qid => ({ user_id: uid, question_id: Number(qid) })).filter(r => Number.isFinite(r.question_id));
+        if (rows.length > 0) {
+            const { error } = await dbClient.from('user_history').insert(rows, { ignoreDuplicates: true });
+            if (error) console.error('搬移歷史失敗:', error);
+        }
+        localStorage.removeItem('pending_history_migration');
+    }
 
-            function formatQuestionHtml(raw) {
-                if (raw === null || raw === undefined) return '';
-                let t = String(raw);
+    async function loadFilterOptions() {
+        const { data, error } = await dbClient.from('questions').select('grade, subject, topic');
+        if (error) return;
+        data.forEach(row => {
+            if (isBannedTopic(row.topic)) return;
+            if (!databaseStructure[row.grade]) databaseStructure[row.grade] = {};
+            if (!databaseStructure[row.grade][row.subject]) databaseStructure[row.grade][row.subject] = new Set();
+            databaseStructure[row.grade][row.subject].add(row.topic);
+        });
+        const gSelect = document.getElementById('gradeSelect');
+        gSelect.innerHTML = Object.keys(databaseStructure).sort().map(g => `<option value="${g}">${g}</option>`).join('');
+        updateSubjectList();
+    }
 
-                // If stored with literal "\n", convert to real newlines first.
-                t = t.replace(/\\n/g, '\n');
+    function updateSubjectList() {
+        const g = document.getElementById('gradeSelect').value;
+        document.getElementById('subjectSelect').innerHTML = Object.keys(databaseStructure[g]).map(s => `<option value="${s}">${s}</option>`).join('');
+        updateTopicList();
+    }
 
-                // Normalize blanks like "(  )" to "( ________ )"
-                t = t.replace(/\(\s*\)/g, '( ________ )');
-                t = t.replace(/\(\s*__+\s*\)/g, '( ________ )');
+    function updateTopicList() {
+        const g = document.getElementById('gradeSelect').value;
+        const s = document.getElementById('subjectSelect').value;
+        document.getElementById('topicsContainer').innerHTML = Array.from(databaseStructure[g][s]).map(t => `
+            <div class="topic-row">
+                <span class="topic-name">${t}</span>
+                <input type="number" min="0" max="40" value="0" class="topic-qty" data-topic="${t}">
+            </div>`).join('');
+    }
 
-                // Remove built-in instruction line and embedded numbering like "10."
-                const lines = t
-                    .split(/\r?\n/)
-                    .map(l => l.trim())
-                    .filter(Boolean)
-                    .filter(l => !/^句意辨析[:：]/.test(l))
-                    // Strip embedded numbering like "10. <text>" but keep the text
-                    .map(l => l.replace(/^\d+\.\s*/, ''));
+    async function masterGenerate() {
+        const loading = document.getElementById('loading');
+        const container = document.getElementById('questionsContainer');
+        loading.style.display = 'block';
+        container.innerHTML = '';
 
-                // Also remove patterns like "\n10." that may appear mid-text (rare)
-                const cleaned = lines.join('\n').replace(/\n\d+\.\s*/g, '\n');
+        let finalHtml = `<div style="text-align:center;margin-bottom:40px;padding-bottom:16px;border-bottom:2px solid #1a1a2e;">
+            <h2 style="font-family:'Noto Serif TC',serif;font-size:1.8rem;font-weight:900;">中文科 綜合能力測試</h2>
+            <p style="margin-top:10px;text-align:right;font-size:0.95rem;">姓名：___________ &nbsp;&nbsp; 班別：_______</p>
+        </div>`;
 
-                return cleaned.replace(/\n/g, '<br>');
+        let globalIdx = 1, sectionIdx = 0;
+
+        const customWords = document.getElementById('customWords').value.trim();
+        if (customWords) {
+            const words = customWords.split(/[ ,，、\n]+/).filter(w => w.length > 0);
+            const type = document.querySelector('input[name="customType"]:checked').value;
+            sectionIdx = 1;
+            finalHtml += `<h3 style="font-family:'Noto Serif TC',serif;font-size:1.05rem;font-weight:700;margin:32px 0 16px;padding:8px 14px;background:#f5f2ec;border-left:4px solid #4a4a6a;">甲部：詞語填充練習 (AI 生成)</h3>`;
+            if (type === 'FillBlank') {
+                finalHtml += `<div style="border:2px solid #1a1a2e;padding:12px 16px;margin-bottom:20px;text-align:center;font-weight:700;letter-spacing:0.15em;font-size:1.05rem;">詞語庫：${words.join('　')}</div>`;
             }
-            
-            // 1. 如果係「重組句子」(Rearrange)
-            if (q.type === 'Rearrange') {
-                const words = typeof q.options === 'string' ? JSON.parse(q.options) : q.options;
-                body = `<div class="flex flex-wrap gap-2 mt-3 ml-6">${words.map(w => `<span class="border-2 border-gray-400 px-3 py-1 rounded-md bg-white shadow-sm">${w}</span>`).join('')}</div>
-                        <div class="mt-4 ml-6 border-b-2 border-gray-800 h-8 w-full"></div>`;
-            } 
-            // 2. 如果係「排句成段」(RearrangeParagraph)
-            else if (q.type === 'RearrangeParagraph') {
-                const sents = typeof q.options === 'string' ? JSON.parse(q.options) : q.options;
-                const circleNums = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧'];
-                body = `<div class="grid grid-cols-2 gap-x-8 gap-y-3 mt-3 ml-6">
-                        ${sents.map((s,i) => `<div class="flex items-start gap-2 border-b border-gray-100 pb-1"><span class="font-bold text-blue-700">${circleNums[i]}</span><p class="text-base">${s}</p></div>`).join('')}
+            try {
+                if (window.location.protocol === 'file:') throw new Error('你而家係用 file:// 直接開頁面，無法使用 /api/generate-sentences。請用已部署到 Vercel 嘅網址開。');
+                const response = await fetch('/api/generate-sentences', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ words, type, model: "openai/gpt-4o-mini" })
+                });
+                const data = await response.json();
+                if (!response.ok || data?.error) throw new Error(data?.error?.message || `API error (${response.status})`);
+                const aiSentences = Array.isArray(data.sentences) ? data.sentences : [];
+                words.forEach((w, i) => {
+                    const sentence = aiSentences[i] || `請運用詞語「${w}」造句並填空。 ( ________ )`;
+                    finalHtml += `<div class="question-item">
+                        <div style="display:flex;align-items:flex-start;gap:10px;">
+                            <span style="font-size:1.1rem;font-weight:900;min-width:28px;">${globalIdx++}.</span>
+                            <p style="font-size:1.1rem;line-height:1.9;flex:1;">${sentence}</p>
                         </div>
-                        <div class="mt-6 ml-6 flex gap-1 items-center font-bold">正確次序：${sents.map(()=>`<div class="border-2 border-gray-800 w-8 h-8"></div>`).join('<span class="mx-1">→</span>')}</div>`;
-            } 
-            // 3. 如果係「選擇題」(MC) —— 呢度就係你要嘅「關聯詞選擇」
-            else if (q.type === 'MC' || (q.options && q.options.length > 0)) {
-                try {
-                    const opts = typeof q.options === 'string' ? JSON.parse(q.options) : q.options;
-                    if (Array.isArray(opts) && opts.length > 0) {
-                        body = `
-                            <p class="mt-3 ml-6 text-xl leading-relaxed">${formatQuestionHtml(q.question_text)}</p>
-                            <div class="grid grid-cols-2 gap-4 mt-4 ml-10 text-lg">
-                                <div>A. ${opts[0]}</div>
-                                <div>B. ${opts[1]}</div>
-                                <div>C. ${opts[2] || ''}</div>
-                                <div>D. ${opts[3] || ''}</div>
-                            </div>
-                        `;
-                    }
-                } catch (e) {
-                    body = `<p class="mt-2 ml-6">${formatQuestionHtml(q.question_text)}</p>`;
-                }
-            }
-            // 4. 其他題型（例如填充題）
-            else {
-                body = `<p class="mt-3 ml-6 text-xl leading-relaxed">${formatQuestionHtml(q.question_text)}</p>`;
-            }
-
-            return `<div class="question-item">
-                        <div class="flex items-baseline gap-2">
-                            <span class="text-2xl font-black text-gray-800">${idx}.</span>
-                            <span class="font-bold text-lg text-gray-600">[ ${q.topic} ]</span>
-                        </div>
-                        ${body}
-                        <div class="answer-block mt-4 p-4 bg-blue-50 border-l-4 border-blue-500 rounded">
-                            <span class="font-bold text-blue-800">💡 參考答案：</span> 
-                            <span class="text-xl font-bold">${q.answer}</span>
-                            <p class="text-gray-600 mt-2"><small>解析：${q.explanation || '無'}</small></p>
+                        <div class="answer-block" style="margin-top:10px;padding:10px 14px;background:#fffbeb;border-left:4px solid #f0c040;border-radius:4px;">
+                            <span style="font-weight:700;color:#b8860b;">💡 建議答案：</span>
+                            <span style="font-size:1.1rem;font-weight:700;">${w}</span>
                         </div>
                     </div>`;
-        }
-        function generatePDF(mode) {
-            window.scrollTo(0,0);
-            const answers = document.querySelectorAll('.answer-block');
-            answers.forEach(el => el.style.setProperty('display', mode === 'student' ? 'none' : 'block', 'important'));
-            const opt = { margin: 15, filename: `混合練習_${mode}.pdf`, image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: 'css' }
-            };
-            html2pdf().set(opt).from(document.getElementById('pdfPrintArea')).save();
+                });
+            } catch(error) {
+                const msg = error?.message || String(error);
+                finalHtml += `<p style="color:#c0392b;padding:12px;background:#fef0f0;border-radius:6px;margin-bottom:16px;">⚠️ AI 生成出錯：${msg}</p>`;
+            }
         }
 
-        window.onload = async () => {
-            document.getElementById('loginBtn').addEventListener('click', async () => {
-                const email = document.getElementById('emailInput').value.trim();
-                if (!email) return alert('請先輸入電郵。');
-                try {
-                    await signInWithEmailMagicLink(email);
-                    alert('已發送登入連結到你嘅電郵。請打開電郵完成登入。');
-                } catch (e) {
-                    console.error('登入失敗:', e);
-                    alert(`登入失敗：${e.message || e}`);
-                }
-            });
+        let session;
+        try { session = await ensureAnonymousAuth(); } catch(e) { console.error("匿名登入失敗:", e); }
+        const uid = session?.user?.id ? String(session.user.id) : null;
+        const g = document.getElementById('gradeSelect').value;
+        const s = document.getElementById('subjectSelect').value;
+        const qtyInputs = document.querySelectorAll('.topic-qty');
+        const BATCH_SIZE = 100, MAX_FETCH = 500, RANDOM_POOL_SIZE = 50;
+        const usedQuestionKeys = new Set(), usedQuestionIds = new Set();
 
-            document.getElementById('logoutBtn').addEventListener('click', async () => {
-                await dbClient.auth.signOut();
-                await ensureAnonymousAuth();
-                await updateAuthUI();
-            });
+        if (uid) {
+            const { data: hist } = await dbClient.from('user_history').select('question_id').eq('user_id', uid).limit(5000);
+            if (Array.isArray(hist)) hist.forEach(r => { if (r?.question_id != null) { usedQuestionIds.add(String(r.question_id)); usedQuestionKeys.add(String(r.question_id)); } });
+        }
 
-            dbClient.auth.onAuthStateChange(async () => {
-                await migratePendingHistoryIfAny();
-                await updateAuthUI();
-            });
+        for (let input of qtyInputs) {
+            let qty = parseInt(input.value);
+            if (!Number.isFinite(qty)) qty = 0;
+            qty = Math.max(0, Math.min(40, qty));
+            if (qty <= 0) continue;
+            const topic = input.dataset.topic;
+            if (isBannedTopic(topic)) continue;
 
-            try {
-                await ensureAnonymousAuth();
-            } catch (e) {
-                console.error("匿名登入失敗:", e);
+            let pool = [], offset = 0;
+            const fetchLimit = Math.min(MAX_FETCH, Math.max(Math.max(RANDOM_POOL_SIZE, qty * 3), BATCH_SIZE));
+            while (pool.length < fetchLimit) {
+                const { data, error } = await dbClient.from('questions').select('*').eq('grade', g).eq('subject', s).eq('topic', topic).range(offset, offset + BATCH_SIZE - 1);
+                if (error || !data || data.length === 0) break;
+                pool = pool.concat(data);
+                offset += BATCH_SIZE;
+                if (data.length < BATCH_SIZE) break;
             }
 
-            await migratePendingHistoryIfAny();
-            await updateAuthUI();
-            await loadFilterOptions();
-        };
-    </script>
+            if (pool.length === 0) continue;
+            const shuffled = shuffleInPlace([...pool]);
+            const picked = [];
+            for (const q of shuffled) {
+                const key = getQuestionKey(q);
+                const qid = (q && (typeof q.id === 'number' || typeof q.id === 'string')) ? String(q.id) : null;
+                if (qid && usedQuestionIds.has(qid)) continue;
+                if (usedQuestionKeys.has(key)) continue;
+                usedQuestionKeys.add(key);
+                if (qid) usedQuestionIds.add(qid);
+                picked.push(q);
+                if (picked.length >= qty) break;
+            }
+            if (picked.length === 0) continue;
+
+            sectionIdx += 1;
+            if (customWords && sectionIdx === 1) sectionIdx = 2;
+            const partLabel = getSectionLabel(sectionIdx);
+            finalHtml += `<h3 style="font-family:'Noto Serif TC',serif;font-size:1.05rem;font-weight:700;margin:32px 0 16px;padding:8px 14px;background:#f5f2ec;border-left:4px solid #1a4a8a;">${partLabel}：${topic}</h3>`;
+            if (topic === '修辭手法辨別') {
+                finalHtml += `<div style="margin-bottom:16px;margin-left:8px;color:#4a4a6a;font-size:1rem;">下列句子中運用了哪種修辭手法？把答案填在( ________ )上。</div>`;
+            }
+            picked.forEach(q => { finalHtml += renderUniversal(q, globalIdx++); });
+
+            if (uid) {
+                const rows = picked.map(q => (q && (typeof q.id === 'number' || typeof q.id === 'string')) ? ({ user_id: uid, question_id: Number(q.id) }) : null).filter(Boolean);
+                if (rows.length > 0) {
+                    const { error: insertError } = await dbClient.from('user_history').insert(rows, { ignoreDuplicates: true });
+                    if (insertError) console.error("寫入歷史失敗:", insertError);
+                }
+            }
+        }
+
+        container.innerHTML = finalHtml;
+        document.getElementById('pdfPrintArea').style.display = 'block';
+        document.getElementById('downloadStudentBtn').classList.remove('hidden');
+        document.getElementById('downloadTeacherBtn').classList.remove('hidden');
+        loading.style.display = 'none';
+    }
+
+    function renderUniversal(q, idx) {
+        let body = '';
+        function formatQuestionHtml(raw, topic) {
+            if (raw == null) return '';
+            let t = String(raw).replace(/\\n/g, '\n');
+            if (topic === '標點符號') {
+                const kept = t.split(/\r?\n/).map(l => l.replace(/\s+$/g, '')).filter(l => !/^標點符號[:：]/.test(l));
+                return `<div style="white-space:pre-wrap;letter-spacing:0.2em;line-height:2;font-size:1.1rem;">${kept.join('\n').replace(/ /g, '　')}</div>`;
+            }
+            t = t.replace(/\(\s*\)/g, '( ________ )').replace(/\(\s*__+\s*\)/g, '( ________ )');
+            const lines = t.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+                .filter(l => !/^句意辨析[:：]/.test(l))
+                .filter(l => !/^下列句子中運用了哪種修辭手法/.test(l))
+                .map(l => l.replace(/^\d+\.\s*/, ''));
+            return lines.join('\n').replace(/\n\d+\.\s*/g, '\n').replace(/\n/g, '<br>');
+        }
+
+        if (q.type === 'Rearrange') {
+            const words = typeof q.options === 'string' ? JSON.parse(q.options) : q.options;
+            body = `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">${words.map(w => `<span style="border:2px solid #4a4a6a;padding:4px 12px;border-radius:6px;background:white;">${w}</span>`).join('')}</div>
+                    <div style="margin-top:16px;border-bottom:2px solid #1a1a2e;height:32px;"></div>`;
+        } else if (q.type === 'RearrangeParagraph') {
+            const sents = typeof q.options === 'string' ? JSON.parse(q.options) : q.options;
+            const nums = ['①','②','③','④','⑤','⑥','⑦','⑧'];
+            body = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 32px;margin-top:10px;">${sents.map((s,i)=>`<div style="display:flex;align-items:flex-start;gap:8px;border-bottom:1px solid #eee;padding-bottom:6px;"><span style="font-weight:700;color:#1a4a8a;">${nums[i]}</span><p style="font-size:1rem;">${s}</p></div>`).join('')}</div>
+                    <div style="margin-top:20px;display:flex;align-items:center;gap:4px;font-weight:700;">正確次序：${sents.map(()=>`<div style="border:2px solid #1a1a2e;width:32px;height:32px;"></div>`).join('<span style="margin:0 4px;">→</span>')}</div>`;
+        } else if (q.type === 'MC' || (q.options && q.options.length > 0)) {
+            try {
+                const opts = typeof q.options === 'string' ? JSON.parse(q.options) : q.options;
+                if (Array.isArray(opts) && opts.length > 0) {
+                    body = `<div style="font-size:1.1rem;line-height:1.9;">${formatQuestionHtml(q.question_text, q.topic)}</div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 32px;margin-top:14px;font-size:1rem;">
+                                <div>A. ${opts[0]}</div><div>B. ${opts[1]}</div>
+                                <div>C. ${opts[2]||''}</div><div>D. ${opts[3]||''}</div>
+                            </div>`;
+                }
+            } catch(e) { body = `<div style="font-size:1.1rem;line-height:1.9;">${formatQuestionHtml(q.question_text, q.topic)}</div>`; }
+        } else {
+            body = `<div style="font-size:1.1rem;line-height:1.9;">${formatQuestionHtml(q.question_text, q.topic)}</div>`;
+        }
+
+        return `<div class="question-item">
+            <div style="display:flex;align-items:flex-start;gap:10px;">
+                <span style="font-size:1.15rem;font-weight:900;min-width:28px;">${idx}.</span>
+                <div style="flex:1;">${body}</div>
+            </div>
+            <div class="answer-block" style="margin-top:12px;padding:10px 14px;background:#f0f7ff;border-left:4px solid #1a4a8a;border-radius:4px;">
+                <span style="font-weight:700;color:#1a4a8a;">💡 參考答案：</span>
+                <span style="font-size:1.1rem;font-weight:700;">${q.answer}</span>
+                <p style="color:#666;margin-top:6px;font-size:0.85rem;">解析：${q.explanation || '無'}</p>
+            </div>
+        </div>`;
+    }
+
+    function generatePDF(mode) {
+        window.scrollTo(0, 0);
+        document.querySelectorAll('.answer-block').forEach(el => el.style.setProperty('display', mode === 'student' ? 'none' : 'block', 'important'));
+        html2pdf().set({
+            margin: 15, filename: `混合練習_${mode}.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2 },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+            pagebreak: { mode: 'css' }
+        }).from(document.getElementById('pdfPrintArea')).save();
+    }
+
+    window.onload = async () => {
+        document.getElementById('loginBtn').addEventListener('click', async () => {
+            const email = document.getElementById('emailInput').value.trim();
+            if (!email) return alert('請先輸入電郵。');
+            try { await signInWithEmailMagicLink(email); alert('已發送登入連結到你嘅電郵。請打開電郵完成登入。'); }
+            catch(e) { alert(`登入失敗：${e.message || e}`); }
+        });
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            await dbClient.auth.signOut(); await ensureAnonymousAuth(); await updateAuthUI();
+        });
+        dbClient.auth.onAuthStateChange(async () => { await migratePendingHistoryIfAny(); await updateAuthUI(); });
+        try { await ensureAnonymousAuth(); } catch(e) { console.error("匿名登入失敗:", e); }
+        await migratePendingHistoryIfAny();
+        await updateAuthUI();
+        await loadFilterOptions();
+    };
+</script>
 </body>
 </html>
