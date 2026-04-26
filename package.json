@@ -1,0 +1,13 @@
+{
+  "name": "ai-quiz",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "db:check": "node scripts/check-supabase.mjs",
+    "db:insert-emdash": "node scripts/insert-emdash-questions.mjs",
+    "db:widen-punctuation": "node scripts/widen-punctuation-db.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.4"
+  }
+}

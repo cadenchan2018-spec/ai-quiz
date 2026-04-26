@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 智能出卷系統</title>
+    <title>俊彥教育中心(康sir)_出卷網站</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600;700;900&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -281,6 +281,109 @@
         return arr;
     }
 
+    function escapeHtml(s) {
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    /** 每個字元（含中文標點）之間插入全形空格；「——」「……」等雙連標點不拆開，避免破折號變成 —　— 兩截。 */
+    function widenIdeographicSpacing(text) {
+        if (text == null || text === '') return '';
+        const sp = '\u3000';
+        const mergePairs = [['\u2014', '\u2014'], ['\u2026', '\u2026'], ['\u2015', '\u2015']];
+        function tokensFromCompact(compact) {
+            const chars = Array.from(compact);
+            const out = [];
+            let i = 0;
+            while (i < chars.length) {
+                let hit = false;
+                for (const [a, b] of mergePairs) {
+                    if (chars[i] === a && chars[i + 1] === b) {
+                        out.push(a + b);
+                        i += 2;
+                        hit = true;
+                        break;
+                    }
+                }
+                if (!hit) {
+                    out.push(chars[i]);
+                    i += 1;
+                }
+            }
+            return out;
+        }
+        return String(text).split(/\r?\n/).map(line => {
+            const trimmedEnd = line.replace(/\s+$/g, '');
+            const compact = trimmedEnd.replace(/[\u3000\s]+/g, '');
+            if (!compact) return '';
+            return tokensFromCompact(compact).join(sp);
+        }).join('\n');
+    }
+
+    /** 若該行（可含全形空格）以「標點符號：」開頭，只去掉此行標題、保留冒號後內文；避免整行被 filter 掉令題目消失。 */
+    function stripLeadingPunctuationTopicLabel(line) {
+        const trimmedEnd = line.replace(/\s+$/g, '');
+        const collapsed = trimmedEnd.replace(/[\u3000\s]+/g, '');
+        if (!/^標點符號[:：]/.test(collapsed)) return trimmedEnd;
+        const sig = ['標', '點', '符', '號'];
+        let pos = 0;
+        const s = trimmedEnd;
+        while (pos < s.length && /[\s\u3000]/.test(s[pos])) pos++;
+        for (const ch of sig) {
+            while (pos < s.length && /[\s\u3000]/.test(s[pos])) pos++;
+            if (pos >= s.length || s[pos] !== ch) return trimmedEnd;
+            pos++;
+        }
+        while (pos < s.length && /[\s\u3000]/.test(s[pos])) pos++;
+        if (pos < s.length && (s[pos] === '：' || s[pos] === ':')) {
+            pos++;
+            while (pos < s.length && /[\s\u3000]/.test(s[pos])) pos++;
+            return s.slice(pos);
+        }
+        return trimmedEnd;
+    }
+
+    /** 行首說明句（僅用於從題幹移除重複）；介面與區塊提示一律用繁體。簡體版若出現在題庫亦會剥掉，以免試卷混用。 */
+    const INSTR_TRAD_SIG = ['在', '適', '當', '的', '位', '置', '加', '上', '標', '點', '符', '號'];
+    const INSTR_SIMP_SIG = ['在', '适', '当', '的', '位', '置', '加', '上', '标', '点', '符', '号'];
+
+    function stripKnownInstructionPrefix(s, sig) {
+        let pos = 0;
+        while (pos < s.length && /[\s\u3000]/.test(s[pos])) pos++;
+        for (const ch of sig) {
+            while (pos < s.length && /[\s\u3000]/.test(s[pos])) pos++;
+            if (pos >= s.length || s[pos] !== ch) return s;
+            pos++;
+        }
+        while (pos < s.length && /[\s\u3000]/.test(s[pos])) pos++;
+        if (pos < s.length && (s[pos] === '。' || s[pos] === '．')) pos++;
+        while (pos < s.length && /[\s\u3000]/.test(s[pos])) pos++;
+        return s.slice(pos);
+    }
+
+    function stripAddPunctuationInstructionFromLine(line) {
+        const trimmedEnd = line.replace(/\s+$/g, '');
+        const collapsed = trimmedEnd.replace(/[\u3000\s]+/g, '');
+        if (/^在適當的位置加上標點符號[。．]?/.test(collapsed))
+            return stripKnownInstructionPrefix(trimmedEnd, INSTR_TRAD_SIG);
+        if (/^在适当的位置加上标点符号[。．]?/.test(collapsed))
+            return stripKnownInstructionPrefix(trimmedEnd, INSTR_SIMP_SIG);
+        return trimmedEnd;
+    }
+
+    function normalizePunctuationTopicLine(line) {
+        let x = line.replace(/\s+$/g, '');
+        for (let i = 0; i < 4; i++) {
+            const y = stripAddPunctuationInstructionFromLine(stripLeadingPunctuationTopicLabel(x));
+            if (y === x) break;
+            x = y;
+        }
+        return x;
+    }
+
     function getSectionLabel(sectionIdx) {
         const labels = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸'];
         if (sectionIdx >= 1 && sectionIdx <= labels.length) return `${labels[sectionIdx - 1]}部`;
@@ -469,35 +572,86 @@
 
             let pool = [], offset = 0;
             const fetchLimit = Math.min(MAX_FETCH, Math.max(Math.max(RANDOM_POOL_SIZE, qty * 3), BATCH_SIZE));
+            const mergeP5And小五 = topic === '修辭手法辨別' && s === '中文' && (g === 'P5' || g === '小五');
+
             while (pool.length < fetchLimit) {
-                const { data, error } = await dbClient.from('questions').select('*').eq('grade', g).eq('subject', s).eq('topic', topic).range(offset, offset + BATCH_SIZE - 1);
+                let q = dbClient.from('questions').select('*').eq('subject', s).eq('topic', topic);
+                if (mergeP5And小五) q = q.in('grade', ['P5', '小五']);
+                else q = q.eq('grade', g);
+                const { data, error } = await q.range(offset, offset + BATCH_SIZE - 1);
                 if (error || !data || data.length === 0) break;
                 pool = pool.concat(data);
                 offset += BATCH_SIZE;
                 if (data.length < BATCH_SIZE) break;
             }
 
+            if (mergeP5And小五 && pool.length > 0) {
+                const seenId = new Set();
+                pool = pool.filter(row => {
+                    if (row.id == null) return true;
+                    const id = String(row.id);
+                    if (seenId.has(id)) return false;
+                    seenId.add(id);
+                    return true;
+                });
+            }
+
             if (pool.length === 0) continue;
             const shuffled = shuffleInPlace([...pool]);
             const picked = [];
-            for (const q of shuffled) {
-                const key = getQuestionKey(q);
-                const qid = (q && (typeof q.id === 'number' || typeof q.id === 'string')) ? String(q.id) : null;
-                if (qid && usedQuestionIds.has(qid)) continue;
-                if (usedQuestionKeys.has(key)) continue;
-                usedQuestionKeys.add(key);
-                if (qid) usedQuestionIds.add(qid);
-                picked.push(q);
-                if (picked.length >= qty) break;
+
+            if (topic === '修辭手法辨別') {
+                const seenRhetoricAnswers = new Set();
+                for (const q of shuffled) {
+                    const ans = String(q.answer ?? '').trim();
+                    if (!ans) continue;
+                    if (seenRhetoricAnswers.has(ans)) continue;
+                    const key = getQuestionKey(q);
+                    const qid = (q && (typeof q.id === 'number' || typeof q.id === 'string')) ? String(q.id) : null;
+                    if (qid && usedQuestionIds.has(qid)) continue;
+                    if (usedQuestionKeys.has(key)) continue;
+                    usedQuestionKeys.add(key);
+                    if (qid) usedQuestionIds.add(qid);
+                    seenRhetoricAnswers.add(ans);
+                    picked.push(q);
+                    if (picked.length >= qty) break;
+                }
+            } else {
+                for (const q of shuffled) {
+                    const key = getQuestionKey(q);
+                    const qid = (q && (typeof q.id === 'number' || typeof q.id === 'string')) ? String(q.id) : null;
+                    if (qid && usedQuestionIds.has(qid)) continue;
+                    if (usedQuestionKeys.has(key)) continue;
+                    usedQuestionKeys.add(key);
+                    if (qid) usedQuestionIds.add(qid);
+                    picked.push(q);
+                    if (picked.length >= qty) break;
+                }
             }
+
             if (picked.length === 0) continue;
 
             sectionIdx += 1;
             if (customWords && sectionIdx === 1) sectionIdx = 2;
             const partLabel = getSectionLabel(sectionIdx);
             finalHtml += `<h3 style="font-family:'Noto Serif TC',serif;font-size:1.05rem;font-weight:700;margin:32px 0 16px;padding:8px 14px;background:#f5f2ec;border-left:4px solid #1a4a8a;">${partLabel}：${topic}</h3>`;
+            if (topic === '標點符號') {
+                const punctSectionHint = widenIdeographicSpacing('在適當的位置加上標點符號。');
+                finalHtml += `<div style="margin:4px 0 20px 10px;padding:0 4px;font-family:'Noto Serif TC',serif;font-size:1.05rem;line-height:2.2;color:#2a2a4a;">${escapeHtml(punctSectionHint)}</div>`;
+            }
             if (topic === '修辭手法辨別') {
-                finalHtml += `<div style="margin-bottom:16px;margin-left:8px;color:#4a4a6a;font-size:1rem;">下列句子中運用了哪種修辭手法？把答案填在( ________ )上。</div>`;
+                finalHtml += `<div style="margin-bottom:12px;margin-left:8px;color:#4a4a6a;font-size:1rem;">下列句子中運用了哪種修辭手法？把答案填在( ________ )上。</div>`;
+                const refOptions = shuffleInPlace(picked.map(q => String(q.answer).trim()).filter(Boolean));
+                const optionRows = refOptions.map((text, i) =>
+                    `<span style="display:inline-block;margin:4px 14px 4px 0;"><strong>${String.fromCharCode(65 + i)}.</strong> ${escapeHtml(text)}</span>`
+                ).join('');
+                finalHtml += `<div style="border:2px solid #1a1a2e;padding:14px 16px;margin-bottom:20px;background:#faf9f6;border-radius:6px;">
+                    <div style="font-weight:700;margin-bottom:10px;color:#1a1a2e;">參考選項（次序已隨機排列，請從中選填；每題答案須不同）</div>
+                    <div style="font-size:1rem;line-height:1.8;">${optionRows}</div>
+                </div>`;
+                if (picked.length < qty) {
+                    finalHtml += `<p style="color:#c0392b;padding:10px 12px;background:#fef0f0;border-radius:6px;margin-bottom:16px;font-size:0.95rem;">題庫中可配對嘅「不同修辭手法」不足 ${qty} 種，本部分只出 ${picked.length} 題。</p>`;
+                }
             }
             picked.forEach(q => { finalHtml += renderUniversal(q, globalIdx++); });
 
@@ -521,17 +675,26 @@
         let body = '';
         function formatQuestionHtml(raw, topic) {
             if (raw == null) return '';
-            let t = String(raw).replace(/\\n/g, '\n');
+            // 題庫有時存字面「\n」「\ n」而非真正換行，先還原成換行以免畫面出現 \　n
+            let t = String(raw)
+                .replace(/\r\n/g, '\n')
+                .replace(/\\\s*(?:r|n)/gi, '\n');
             if (topic === '標點符號') {
-                const kept = t.split(/\r?\n/).map(l => l.replace(/\s+$/g, '')).filter(l => !/^標點符號[:：]/.test(l));
-                return `<div style="white-space:pre-wrap;letter-spacing:0.2em;line-height:2;font-size:1.1rem;">${kept.join('\n').replace(/ /g, '　')}</div>`;
+                const kept = t.split(/\r?\n/).map(l => normalizePunctuationTopicLine(l)).map(l => l.replace(/\s+$/g, '')).filter(l => l.length > 0);
+                const widened = widenIdeographicSpacing(kept.join('\n'));
+                return `<div style="white-space:pre-wrap;line-height:2.2;font-size:1.1rem;letter-spacing:0;">${escapeHtml(widened)}</div>`;
             }
             t = t.replace(/\(\s*\)/g, '( ________ )').replace(/\(\s*__+\s*\)/g, '( ________ )');
             const lines = t.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
                 .filter(l => !/^句意辨析[:：]/.test(l))
                 .filter(l => !/^下列句子中運用了哪種修辭手法/.test(l))
                 .map(l => l.replace(/^\d+\.\s*/, ''));
-            return lines.join('\n').replace(/\n\d+\.\s*/g, '\n').replace(/\n/g, '<br>');
+            let joined = lines.join('\n').replace(/\n\d+\.\s*/g, '\n');
+            if (topic === '修辭手法辨別') {
+                const hasBlank = /\(\s*_{2,}\s*\)/.test(joined);
+                if (!hasBlank) joined = joined.trimEnd() + ' ( ________ )';
+            }
+            return joined.replace(/\n/g, '<br>');
         }
 
         if (q.type === 'Rearrange') {
@@ -547,10 +710,11 @@
             try {
                 const opts = typeof q.options === 'string' ? JSON.parse(q.options) : q.options;
                 if (Array.isArray(opts) && opts.length > 0) {
+                    const optHtml = (o) => (q.topic === '標點符號' ? escapeHtml(widenIdeographicSpacing(String(o ?? ''))) : String(o ?? ''));
                     body = `<div style="font-size:1.1rem;line-height:1.9;">${formatQuestionHtml(q.question_text, q.topic)}</div>
                             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 32px;margin-top:14px;font-size:1rem;">
-                                <div>A. ${opts[0]}</div><div>B. ${opts[1]}</div>
-                                <div>C. ${opts[2]||''}</div><div>D. ${opts[3]||''}</div>
+                                <div>A. ${optHtml(opts[0])}</div><div>B. ${optHtml(opts[1])}</div>
+                                <div>C. ${optHtml(opts[2])}</div><div>D. ${optHtml(opts[3])}</div>
                             </div>`;
                 }
             } catch(e) { body = `<div style="font-size:1.1rem;line-height:1.9;">${formatQuestionHtml(q.question_text, q.topic)}</div>`; }
@@ -565,7 +729,7 @@
             </div>
             <div class="answer-block" style="margin-top:12px;padding:10px 14px;background:#f0f7ff;border-left:4px solid #1a4a8a;border-radius:4px;">
                 <span style="font-weight:700;color:#1a4a8a;">💡 參考答案：</span>
-                <span style="font-size:1.1rem;font-weight:700;">${q.answer}</span>
+                <span style="font-size:1.1rem;font-weight:700;">${q.topic === '標點符號' ? escapeHtml(widenIdeographicSpacing(String(q.answer ?? ''))) : (q.answer ?? '')}</span>
                 <p style="color:#666;margin-top:6px;font-size:0.85rem;">解析：${q.explanation || '無'}</p>
             </div>
         </div>`;
