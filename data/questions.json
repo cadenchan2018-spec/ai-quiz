@@ -1,0 +1,46 @@
+[
+  {
+    "id": 1,
+    "grade": "P5",
+    "subject": "中文",
+    "topic": "標點符號",
+    "type": "FillBlank",
+    "question_text": "今天天氣真好　我們一起去公園玩吧",
+    "options": null,
+    "answer": "今天天氣真好！我們一起去公園玩吧。",
+    "explanation": "感嘆句用驚嘆號，陳述句用句號"
+  },
+  {
+    "id": 2,
+    "grade": "P5",
+    "subject": "中文",
+    "topic": "標點符號",
+    "type": "FillBlank",
+    "question_text": "你喜歡吃蘋果　還是橙",
+    "options": null,
+    "answer": "你喜歡吃蘋果，還是橙？",
+    "explanation": "選擇問句用逗號分隔，結尾用問號"
+  },
+  {
+    "id": 3,
+    "grade": "S1",
+    "subject": "中史",
+    "topic": "春秋戰國",
+    "type": "MC",
+    "question_text": "「百家爭鳴」出現在哪個時期？",
+    "options": ["夏商周", "春秋戰國", "秦漢", "魏晉南北朝"],
+    "answer": "B",
+    "explanation": "春秋戰國時期思想活躍，出現百家爭鳴"
+  },
+  {
+    "id": 4,
+    "grade": "S1",
+    "subject": "中史",
+    "topic": "秦漢",
+    "type": "FillBlank",
+    "question_text": "秦始皇統一中國後，統一了文字、貨幣和（　　　）。",
+    "options": null,
+    "answer": "度量衡",
+    "explanation": "秦始皇統一了文字、貨幣和度量衡"
+  }
+]

@@ -55,12 +55,20 @@
         .status-dot.active { background: #27ae60; }
         .auth-hint { font-size: 0.72rem; color: #aaa; margin-top: 3px; }
         .auth-controls { display: flex; align-items: center; gap: 8px; }
-        .auth-controls input {
-            padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px;
-            font-size: 0.82rem; font-family: inherit; width: 220px;
-            background: white; color: var(--ink); outline: none; transition: border-color 0.2s;
+        .btn-google {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 7px 14px; border: 1px solid var(--border); border-radius: 999px;
+            background: #fff; color: var(--ink); font-size: 0.82rem; font-family: inherit; font-weight: 700;
+            cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s, transform 0.1s;
         }
-        .auth-controls input:focus { border-color: var(--blue-light); }
+        .btn-google:hover { border-color: var(--blue-light); box-shadow: 0 2px 8px rgba(26,74,138,0.12); }
+        .btn-google:active { transform: scale(0.97); }
+        .btn-google:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+        .google-mark {
+            width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+            font-weight: 900; font-size: 0.9rem; color: #4285f4; background: #fff;
+        }
+        .hidden { display: none !important; }
         .btn-sm {
             padding: 6px 14px; border: none; border-radius: 6px;
             font-size: 0.82rem; font-family: inherit; font-weight: 700;
@@ -102,14 +110,35 @@
         select:focus { border-color: var(--blue-light); }
 
         /* Topics */
-        #topicsContainer { max-height: 280px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--paper-warm); }
-        .topic-row {
+        #topicsContainer { max-height: 400px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--paper-warm); }
+        
+        /* 主 topic 行 */
+        .topic-group-header {
             display: flex; justify-content: space-between; align-items: center;
-            padding: 8px 12px; border-bottom: 1px solid var(--border); transition: background 0.15s;
+            padding: 10px 12px; border-bottom: 1px solid var(--border);
+            background: #f5f2ec; cursor: pointer; transition: background 0.15s;
+            font-weight: 700; font-size: 0.9rem;
         }
-        .topic-row:last-child { border-bottom: none; }
-        .topic-row:hover { background: #eee9df; }
+        .topic-group-header:hover { background: #eee9df; }
+        .topic-group-header.collapsed { border-bottom: none; }
+        .topic-toggle { 
+            font-size: 0.75rem; color: var(--ink-light); 
+            transition: transform 0.2s; display: inline-block;
+        }
+        .topic-toggle.expanded { transform: rotate(90deg); }
+        
+        /* 子 topic 行（題型） */
+        .topic-subrow {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 8px 12px 8px 32px; border-bottom: 1px solid #e8e3d8;
+            background: white; transition: background 0.15s;
+        }
+        .topic-subrow:last-child { border-bottom: 1px solid var(--border); }
+        .topic-subrow:hover { background: #faf9f6; }
+        .topic-subrow.hidden { display: none; }
+        
         .topic-name { font-size: 0.88rem; }
+        .topic-type-label { font-size: 0.82rem; color: var(--ink-light); }
         .topic-qty {
             width: 52px; text-align: center; padding: 4px 6px;
             border: 1px solid var(--border); border-radius: 6px;
@@ -195,11 +224,10 @@
             <span class="status-dot" id="statusDot"></span>
             <span id="authStatus">狀態：讀取中…</span>
         </div>
-        <div class="auth-hint">登入後可跨裝置追蹤已出題紀錄，避免重複出題</div>
+        <div class="auth-hint">使用 Google 登入後可跨裝置追蹤已出題紀錄，避免重複出題</div>
     </div>
     <div class="auth-controls">
-        <input id="emailInput" type="email" placeholder="輸入電郵以 Magic Link 登入">
-        <button id="loginBtn" class="btn-sm btn-login">登入</button>
+        <button id="loginBtn" class="btn-google"><span class="google-mark">G</span>使用 Google 登入</button>
         <button id="logoutBtn" class="btn-sm btn-logout hidden">登出</button>
     </div>
 </div>
@@ -396,6 +424,16 @@
         return JSON.stringify(q);
     }
 
+    function hasEnoughRearrangeWords(q) {
+        if (q?.type !== 'Rearrange') return true;
+        try {
+            const words = typeof q.options === 'string' ? JSON.parse(q.options) : q.options;
+            return Array.isArray(words) && words.filter(w => String(w ?? '').trim()).length >= 8;
+        } catch {
+            return false;
+        }
+    }
+
     async function ensureAnonymousAuth() {
         const { data } = await dbClient.auth.getSession();
         if (data?.session) return data.session;
@@ -436,7 +474,7 @@
         return Array.isArray(data) ? data.map(r => r.question_id).filter(x => x != null) : [];
     }
 
-    async function signInWithEmailMagicLink(email) {
+    async function signInWithGoogle() {
         const { data: sessData } = await dbClient.auth.getSession();
         const currentUser = sessData?.session?.user || null;
         const currentUid = currentUser?.id ? String(currentUser.id) : null;
@@ -446,7 +484,10 @@
                 localStorage.setItem('pending_history_migration', JSON.stringify({ fromUid: currentUid, qids: anonHistory, ts: Date.now() }));
             } catch(e) { console.error('讀取匿名歷史失敗:', e); }
         }
-        const { error } = await dbClient.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href } });
+        const { error } = await dbClient.auth.signInWithOAuth({
+            provider: 'google',
+            options: { redirectTo: window.location.origin + window.location.pathname }
+        });
         if (error) throw error;
     }
 
@@ -468,34 +509,169 @@
         localStorage.removeItem('pending_history_migration');
     }
 
+    const GRADE_OPTIONS = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6'];
+    const PRIMARY_GRADES = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'];
+    const PRIMARY_SUBJECTS = ['中文', '英文', '數學', '常識'];
+    const S1_S2_SUBJECTS = ['中文', '英文', '數學', '科學', '地理', '中史', '歷史', '公社'];
+    const S3_SUBJECTS = ['中文', '英文', '數學', '物理', '化學', '生物', '地理', '中史', '歷史', '公社'];
+    const S3_CHINESE_HISTORY_PRESET_TOPICS = [
+        '課題9 兩次世界大戰的簡介',
+        '課題9 兩次世界大戰前的國際關係與衝突的原因',
+        '課題9 戰後的非殖民地化與「第三世界」的冒起',
+        '課題9 戰爭與發明：總體戰、新型軍備的出現與其他發明*',
+        '課題9 種族滅絕：以二戰期間的「猶太大屠殺」為例*',
+        '課題10 冷戰的背景與成因',
+        '課題10 冷戰的主要發展',
+        '課題10 冷戰的結束',
+        '課題10 後冷戰時期的國際局勢',
+        '課題10 冷戰不同時期的歷史人物*'
+    ];
+
+    function ensurePresetTopics() {
+        if (!databaseStructure['S3']) databaseStructure['S3'] = {};
+        if (!databaseStructure['S3']['中史']) databaseStructure['S3']['中史'] = {};
+        const target = databaseStructure['S3']['中史'];
+        S3_CHINESE_HISTORY_PRESET_TOPICS.forEach(topic => {
+            if (!target[topic]) target[topic] = new Set();
+        });
+    }
+
     async function loadFilterOptions() {
-        const { data, error } = await dbClient.from('questions').select('grade, subject, topic');
+        const { data, error } = await dbClient.from('questions').select('grade, subject, topic, type');
         if (error) return;
         data.forEach(row => {
             if (isBannedTopic(row.topic)) return;
             if (!databaseStructure[row.grade]) databaseStructure[row.grade] = {};
-            if (!databaseStructure[row.grade][row.subject]) databaseStructure[row.grade][row.subject] = new Set();
-            databaseStructure[row.grade][row.subject].add(row.topic);
+            if (!databaseStructure[row.grade][row.subject]) databaseStructure[row.grade][row.subject] = {};
+            
+            const isPrimary = PRIMARY_GRADES.includes(row.grade);
+            
+            if (isPrimary) {
+                // P1-P6：直接用 topic 名稱，不分題型
+                if (!databaseStructure[row.grade][row.subject][row.topic]) {
+                    databaseStructure[row.grade][row.subject][row.topic] = new Set();
+                }
+                databaseStructure[row.grade][row.subject][row.topic].add('all'); // 標記為包含所有題型
+            } else {
+                // S1-S6：提取基礎 topic，按題型分組
+                const baseTopic = row.topic.replace(/\s*-\s*(選擇題|填充題|重組句子|重組段落|其他)$/, '');
+                if (!databaseStructure[row.grade][row.subject][baseTopic]) {
+                    databaseStructure[row.grade][row.subject][baseTopic] = new Set();
+                }
+                databaseStructure[row.grade][row.subject][baseTopic].add(row.type);
+            }
         });
+        ensurePresetTopics();
         const gSelect = document.getElementById('gradeSelect');
-        gSelect.innerHTML = Object.keys(databaseStructure).sort().map(g => `<option value="${g}">${g}</option>`).join('');
+        const allGrades = [...new Set([...GRADE_OPTIONS, ...Object.keys(databaseStructure)])];
+        gSelect.innerHTML = allGrades.map(g => `<option value="${g}">${g}</option>`).join('');
         updateSubjectList();
     }
 
     function updateSubjectList() {
         const g = document.getElementById('gradeSelect').value;
-        document.getElementById('subjectSelect').innerHTML = Object.keys(databaseStructure[g]).map(s => `<option value="${s}">${s}</option>`).join('');
+        let subjects = [];
+        if (PRIMARY_GRADES.includes(g)) {
+            subjects = [...new Set([...PRIMARY_SUBJECTS, ...Object.keys(databaseStructure[g] || {})])];
+        } else if (g === 'S1' || g === 'S2') {
+            subjects = [...new Set([...S1_S2_SUBJECTS, ...Object.keys(databaseStructure[g] || {})])];
+        } else if (g === 'S3') {
+            subjects = [...new Set([...S3_SUBJECTS, ...Object.keys(databaseStructure[g] || {})])];
+        } else {
+            subjects = Object.keys(databaseStructure[g] || {});
+        }
+        subjects = subjects.filter(subject => !(g === 'P5' && subject === '中史'));
+        const subjectSelect = document.getElementById('subjectSelect');
+        if (subjects.length === 0) {
+            subjectSelect.innerHTML = '<option value="">暫無科目</option>';
+        } else {
+            subjectSelect.innerHTML = subjects.map(s => `<option value="${s}">${s}</option>`).join('');
+        }
         updateTopicList();
     }
 
     function updateTopicList() {
         const g = document.getElementById('gradeSelect').value;
         const s = document.getElementById('subjectSelect').value;
-        document.getElementById('topicsContainer').innerHTML = Array.from(databaseStructure[g][s]).map(t => `
-            <div class="topic-row">
-                <span class="topic-name">${t}</span>
-                <input type="number" min="0" max="40" value="0" class="topic-qty" data-topic="${t}">
-            </div>`).join('');
+        const topics = databaseStructure[g]?.[s];
+        const topicsContainer = document.getElementById('topicsContainer');
+        if (!topics || Object.keys(topics).length === 0) {
+            topicsContainer.innerHTML = '<div style="padding:20px;text-align:center;color:#aaa;font-size:0.85rem;">此年級暫無題庫資料</div>';
+            return;
+        }
+        
+        const isPrimary = PRIMARY_GRADES.includes(g);
+        
+        // P1-P6：單層選單（舊版）
+        if (isPrimary) {
+            const allTopics = new Set();
+            Object.keys(topics).forEach(baseTopic => {
+                allTopics.add(baseTopic);
+            });
+            topicsContainer.innerHTML = Array.from(allTopics).sort().map(t => `
+                <div class="topic-subrow" style="padding-left:12px;">
+                    <span class="topic-name">${t}</span>
+                    <input type="number" min="0" max="40" value="0" class="topic-qty" data-topic="${t}" data-type="">
+                </div>`).join('');
+            return;
+        }
+        
+        // S1-S6：二級選單（新版）
+        const typeLabels = {
+            'MC': '選擇題',
+            'FillBlank': '填充題',
+            'Rearrange': '重組句子',
+            'RearrangeParagraph': '重組段落'
+        };
+        
+        let html = '';
+        Object.keys(topics).sort().forEach(baseTopic => {
+            const types = Array.from(topics[baseTopic]);
+            const groupId = `group-${baseTopic.replace(/\s+/g, '-')}`;
+            
+            html += `<div class="topic-group-header" onclick="toggleTopicGroup('${groupId}')">
+                <span><span class="topic-toggle" id="${groupId}-toggle">▶</span> ${baseTopic}</span>
+                <span style="font-size:0.75rem;color:#999;">${types.length} 種題型</span>
+            </div>`;
+            
+            types.forEach(type => {
+                const typeLabel = typeLabels[type] || type;
+                html += `<div class="topic-subrow hidden" data-group="${groupId}">
+                    <span class="topic-type-label">${typeLabel}</span>
+                    <input type="number" min="0" max="40" value="0" class="topic-qty" 
+                           data-topic="${baseTopic}" data-type="${type}">
+                </div>`;
+            });
+
+            if (types.length === 0) {
+                html += `<div class="topic-subrow hidden" data-group="${groupId}">
+                    <span class="topic-type-label" style="color:#999;">暫無題型（上載題目後可出卷）</span>
+                    <span style="font-size:0.82rem;color:#bbb;">--</span>
+                </div>`;
+            }
+        });
+        
+        topicsContainer.innerHTML = html;
+    }
+    
+    function toggleTopicGroup(groupId) {
+        const subrows = document.querySelectorAll(`[data-group="${groupId}"]`);
+        const toggle = document.getElementById(`${groupId}-toggle`);
+        const isExpanded = toggle.classList.contains('expanded');
+        
+        subrows.forEach(row => {
+            if (isExpanded) {
+                row.classList.add('hidden');
+            } else {
+                row.classList.remove('hidden');
+            }
+        });
+        
+        if (isExpanded) {
+            toggle.classList.remove('expanded');
+        } else {
+            toggle.classList.add('expanded');
+        }
     }
 
     async function masterGenerate() {
@@ -562,20 +738,36 @@
             if (Array.isArray(hist)) hist.forEach(r => { if (r?.question_id != null) { usedQuestionIds.add(String(r.question_id)); usedQuestionKeys.add(String(r.question_id)); } });
         }
 
+        // 第一階段：收集所有選中的題目
+        const allPickedQuestions = [];
+
         for (let input of qtyInputs) {
             let qty = parseInt(input.value);
             if (!Number.isFinite(qty)) qty = 0;
             qty = Math.max(0, Math.min(40, qty));
             if (qty <= 0) continue;
             const topic = input.dataset.topic;
+            const requestedType = input.dataset.type; // 新增：讀取指定的題型
             if (isBannedTopic(topic)) continue;
 
             let pool = [], offset = 0;
             const fetchLimit = Math.min(MAX_FETCH, Math.max(Math.max(RANDOM_POOL_SIZE, qty * 3), BATCH_SIZE));
             const mergeP5And小五 = topic === '修辭手法辨別' && s === '中文' && (g === 'P5' || g === '小五');
+            const isPrimary = PRIMARY_GRADES.includes(g);
 
             while (pool.length < fetchLimit) {
-                let q = dbClient.from('questions').select('*').eq('subject', s).eq('topic', topic);
+                let q;
+                
+                // P1-P6：舊邏輯，按 topic 查詢（不限 type）
+                if (isPrimary || !requestedType) {
+                    q = dbClient.from('questions').select('*').eq('subject', s).eq('topic', topic);
+                } 
+                // S1-S6：新邏輯，按 topic + type 查詢
+                else {
+                    q = dbClient.from('questions').select('*').eq('subject', s).eq('type', requestedType);
+                    q = q.or(`topic.eq.${topic},topic.eq.${topic} - 選擇題,topic.eq.${topic} - 填充題,topic.eq.${topic} - 重組句子,topic.eq.${topic} - 重組段落`);
+                }
+                
                 if (mergeP5And小五) q = q.in('grade', ['P5', '小五']);
                 else q = q.eq('grade', g);
                 const { data, error } = await q.range(offset, offset + BATCH_SIZE - 1);
@@ -596,6 +788,8 @@
                 });
             }
 
+            if (pool.length === 0) continue;
+            pool = pool.filter(hasEnoughRearrangeWords);
             if (pool.length === 0) continue;
             const shuffled = shuffleInPlace([...pool]);
             const picked = [];
@@ -631,17 +825,44 @@
 
             if (picked.length === 0) continue;
 
+            allPickedQuestions.push(...picked);
+        }
+
+        // 第二階段：按題型分組
+        const questionsByType = {};
+        allPickedQuestions.forEach(q => {
+            const type = q.type || 'Other';
+            if (!questionsByType[type]) questionsByType[type] = [];
+            questionsByType[type].push(q);
+        });
+
+        // 第三階段：按題型渲染
+        const typeLabels = {
+            'MC': '選擇題',
+            'FillBlank': '填充題',
+            'Rearrange': '重組句子',
+            'RearrangeParagraph': '重組段落',
+            'Other': '其他題型'
+        };
+
+        for (const [type, questions] of Object.entries(questionsByType)) {
+            if (questions.length === 0) continue;
+            
             sectionIdx += 1;
             if (customWords && sectionIdx === 1) sectionIdx = 2;
             const partLabel = getSectionLabel(sectionIdx);
-            finalHtml += `<h3 style="font-family:'Noto Serif TC',serif;font-size:1.05rem;font-weight:700;margin:32px 0 16px;padding:8px 14px;background:#f5f2ec;border-left:4px solid #1a4a8a;">${partLabel}：${topic}</h3>`;
-            if (topic === '標點符號') {
+            const typeLabel = typeLabels[type] || type;
+            finalHtml += `<h3 style="font-family:'Noto Serif TC',serif;font-size:1.05rem;font-weight:700;margin:32px 0 16px;padding:8px 14px;background:#f5f2ec;border-left:4px solid #1a4a8a;">${partLabel}：${typeLabel}</h3>`;
+            
+            // 特殊題型的提示
+            const firstTopic = questions[0]?.topic || '';
+            if (firstTopic === '標點符號') {
                 const punctSectionHint = widenIdeographicSpacing('在適當的位置加上標點符號。');
                 finalHtml += `<div style="margin:4px 0 20px 10px;padding:0 4px;font-family:'Noto Serif TC',serif;font-size:1.05rem;line-height:2.2;color:#2a2a4a;">${escapeHtml(punctSectionHint)}</div>`;
             }
-            if (topic === '修辭手法辨別') {
+            if (firstTopic === '修辭手法辨別') {
                 finalHtml += `<div style="margin-bottom:12px;margin-left:8px;color:#4a4a6a;font-size:1rem;">下列句子中運用了哪種修辭手法？把答案填在( ________ )上。</div>`;
-                const refOptions = shuffleInPlace(picked.map(q => String(q.answer).trim()).filter(Boolean));
+                const refOptions = shuffleInPlace(questions.map(q => String(q.answer).trim()).filter(Boolean));
                 const optionRows = refOptions.map((text, i) =>
                     `<span style="display:inline-block;margin:4px 14px 4px 0;"><strong>${String.fromCharCode(65 + i)}.</strong> ${escapeHtml(text)}</span>`
                 ).join('');
@@ -649,18 +870,17 @@
                     <div style="font-weight:700;margin-bottom:10px;color:#1a1a2e;">參考選項（次序已隨機排列，請從中選填；每題答案須不同）</div>
                     <div style="font-size:1rem;line-height:1.8;">${optionRows}</div>
                 </div>`;
-                if (picked.length < qty) {
-                    finalHtml += `<p style="color:#c0392b;padding:10px 12px;background:#fef0f0;border-radius:6px;margin-bottom:16px;font-size:0.95rem;">題庫中可配對嘅「不同修辭手法」不足 ${qty} 種，本部分只出 ${picked.length} 題。</p>`;
-                }
             }
-            picked.forEach(q => { finalHtml += renderUniversal(q, globalIdx++); });
+            
+            questions.forEach(q => { finalHtml += renderUniversal(q, globalIdx++); });
+        }
 
-            if (uid) {
-                const rows = picked.map(q => (q && (typeof q.id === 'number' || typeof q.id === 'string')) ? ({ user_id: uid, question_id: Number(q.id) }) : null).filter(Boolean);
-                if (rows.length > 0) {
-                    const { error: insertError } = await dbClient.from('user_history').insert(rows, { ignoreDuplicates: true });
-                    if (insertError) console.error("寫入歷史失敗:", insertError);
-                }
+        // 寫入歷史
+        if (uid && allPickedQuestions.length > 0) {
+            const rows = allPickedQuestions.map(q => (q && (typeof q.id === 'number' || typeof q.id === 'string')) ? ({ user_id: uid, question_id: Number(q.id) }) : null).filter(Boolean);
+            if (rows.length > 0) {
+                const { error: insertError } = await dbClient.from('user_history').insert(rows, { ignoreDuplicates: true });
+                if (insertError) console.error("寫入歷史失敗:", insertError);
             }
         }
 
@@ -749,10 +969,8 @@
 
     window.onload = async () => {
         document.getElementById('loginBtn').addEventListener('click', async () => {
-            const email = document.getElementById('emailInput').value.trim();
-            if (!email) return alert('請先輸入電郵。');
-            try { await signInWithEmailMagicLink(email); alert('已發送登入連結到你嘅電郵。請打開電郵完成登入。'); }
-            catch(e) { alert(`登入失敗：${e.message || e}`); }
+            try { await signInWithGoogle(); }
+            catch(e) { alert(`Google 登入失敗：${e.message || e}`); }
         });
         document.getElementById('logoutBtn').addEventListener('click', async () => {
             await dbClient.auth.signOut(); await ensureAnonymousAuth(); await updateAuthUI();
