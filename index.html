@@ -148,6 +148,25 @@
         #topicsContainer::-webkit-scrollbar { width: 6px; }
         #topicsContainer::-webkit-scrollbar-track { background: transparent; }
         #topicsContainer::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        .topic-left { display:flex; align-items:center; gap:8px; }
+        .topic-pick { width: 16px; height: 16px; accent-color: var(--blue); cursor: pointer; }
+        .mode-row { display:flex; gap:14px; margin-bottom:10px; align-items:center; flex-wrap:wrap; }
+        .mode-row .radio-label { margin: 0; }
+        .balanced-panel {
+            border: 1px dashed var(--border);
+            border-radius: 8px;
+            background: #fff;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+        }
+        .balanced-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+        .balanced-grid input {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+        @media (max-width: 640px) { .balanced-grid { grid-template-columns:1fr; } }
 
         /* Textarea */
         textarea {
@@ -246,7 +265,51 @@
             </div>
             <div class="select-row">
                 <select id="gradeSelect" onchange="updateSubjectList()"></select>
-                <select id="subjectSelect" onchange="updateTopicList()"></select>
+                <select id="subjectSelect" onchange="updateHistoryBookUI(); updateTopicList()"></select>
+            </div>
+            <div class="select-row hidden" id="historyBookRow">
+                <select id="historyBookSelect" onchange="updateTopicList()"></select>
+            </div>
+            <div class="mode-row" id="questionModeRow">
+                <label class="radio-label" id="modeManualLabel">
+                    <input type="radio" name="questionMode" value="manual" checked onchange="updateQuestionModeUI()"> 逐課題設定題數
+                </label>
+                <label class="radio-label" id="modeBalancedLabel">
+                    <input type="radio" name="questionMode" value="balanced" onchange="updateQuestionModeUI()"> 勾課題 + 填總題數（平均抽題）
+                </label>
+            </div>
+            <div id="balancedPanel" class="balanced-panel hidden">
+                <div style="font-size:0.82rem;color:#666;margin-bottom:8px;">先勾選課題，再填各題型總題數，系統會在已選課題中平均分配並隨機抽題。</div>
+                <div class="balanced-grid">
+                    <div>
+                        <div style="font-size:0.8rem;color:#666;margin-bottom:4px;">選擇題總數</div>
+                        <input id="totalMcInput" type="number" min="0" max="120" value="0">
+                    </div>
+                    <div>
+                        <div style="font-size:0.8rem;color:#666;margin-bottom:4px;">填充題總數</div>
+                        <input id="totalFillBlankInput" type="number" min="0" max="120" value="0">
+                    </div>
+                    <div>
+                        <div style="font-size:0.8rem;color:#666;margin-bottom:4px;">配對題總數</div>
+                        <input id="totalMatchingInput" type="number" min="0" max="120" value="0">
+                    </div>
+                    <div>
+                        <div style="font-size:0.8rem;color:#666;margin-bottom:4px;">是非題總數</div>
+                        <input id="totalTrueFalseInput" type="number" min="0" max="120" value="0">
+                    </div>
+                    <div>
+                        <div style="font-size:0.8rem;color:#666;margin-bottom:4px;">短問答總數</div>
+                        <input id="totalShortAnswerInput" type="number" min="0" max="120" value="0">
+                    </div>
+                    <div>
+                        <div style="font-size:0.8rem;color:#666;margin-bottom:4px;">長問答總數</div>
+                        <input id="totalLongAnswerInput" type="number" min="0" max="120" value="0">
+                    </div>
+                    <div>
+                        <div style="font-size:0.8rem;color:#666;margin-bottom:4px;">資料題總數</div>
+                        <input id="totalDataQuestionInput" type="number" min="0" max="120" value="0">
+                    </div>
+                </div>
             </div>
             <div id="topicsContainer">
                 <div style="padding:20px;text-align:center;color:#ccc;font-size:0.85rem;">載入中…</div>
@@ -294,6 +357,7 @@
     const dbClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     let databaseStructure = {};
+    let databaseTypeCounts = {};
 
     function isBannedTopic(topic) {
         const t = (topic ?? '').toString().trim();
@@ -514,35 +578,101 @@
     const PRIMARY_SUBJECTS = ['中文', '英文', '數學', '常識'];
     const S1_S2_SUBJECTS = ['中文', '英文', '數學', '科學', '地理', '中史', '歷史', '公社'];
     const S3_SUBJECTS = ['中文', '英文', '數學', '物理', '化學', '生物', '地理', '中史', '歷史', '公社'];
-    const S3_CHINESE_HISTORY_PRESET_TOPICS = [
-        '課題9 兩次世界大戰的簡介',
-        '課題9 兩次世界大戰前的國際關係與衝突的原因',
-        '課題9 戰後的非殖民地化與「第三世界」的冒起',
+    const SECONDARY_HISTORY_DEFAULT_TYPES = [
+        'MC',           // 選擇
+        'FillBlank',    // 填充
+        'Matching',     // 配對
+        'TrueFalse',    // 是非
+        'ShortAnswer',  // 短問答
+        'LongAnswer',   // 長問答
+        'DataQuestion'  // 資料題
+    ];
+    const SECONDARY_HISTORY_BOOKS = {
+        S3: [
+            {
+                id: 'historyJourney_s3_1',
+                title: '歷史旅程 新課題系列 3上',
+                topics: [
+                    '課題9 第一次世界大戰（簡介＋戰前國際關係與衝突原因）',
+                    '課題9 第二次世界大戰',
+                    '課題9 戰爭與發明：總體戰、新型軍備的出現與其他發明*',
+                    '課題9 種族滅絕：以二戰期間的「猶太大屠殺」為例*',
+                    '課題9 戰後的非殖民地化與「第三世界」的冒起',
+                    '課題10 冷戰的背景與成因',
+                    '課題10 冷戰的第一次緩和',
+                    '課題10 冷戰的第二次緩和',
+                    '課題10 冷戰的結束',
+                    '課題10 後冷戰時期的國際局勢',
+                    '課題10 冷戰不同時期的歷史人物*'
+                ]
+            }
+        ]
+    };
+    const S3_HISTORY_PRESET_TOPICS = [
+        '課題9 第一次世界大戰（簡介＋戰前國際關係與衝突原因）',
+        '課題9 第二次世界大戰',
         '課題9 戰爭與發明：總體戰、新型軍備的出現與其他發明*',
         '課題9 種族滅絕：以二戰期間的「猶太大屠殺」為例*',
+        '課題9 戰後的非殖民地化與「第三世界」的冒起',
         '課題10 冷戰的背景與成因',
-        '課題10 冷戰的主要發展',
+        '課題10 冷戰的第一次緩和',
+        '課題10 冷戰的第二次緩和',
         '課題10 冷戰的結束',
         '課題10 後冷戰時期的國際局勢',
         '課題10 冷戰不同時期的歷史人物*'
     ];
 
+    const SECONDARY_HISTORY_TOPIC_MERGE = {};
+    const TYPE_DISPLAY_ORDER = [
+        'MC',
+        'FillBlank',
+        'Matching',
+        'TrueFalse',
+        'ShortAnswer',
+        'LongAnswer',
+        'DataQuestion',
+        'QA',
+        '問答題',
+        'Rearrange',
+        'RearrangeParagraph'
+    ];
+
+    function getTypeOrderIndex(type) {
+        const key = String(type || '').trim();
+        const idx = TYPE_DISPLAY_ORDER.indexOf(key);
+        return idx >= 0 ? idx : 999;
+    }
+
     function ensurePresetTopics() {
         if (!databaseStructure['S3']) databaseStructure['S3'] = {};
-        if (!databaseStructure['S3']['中史']) databaseStructure['S3']['中史'] = {};
-        const target = databaseStructure['S3']['中史'];
-        S3_CHINESE_HISTORY_PRESET_TOPICS.forEach(topic => {
+        if (!databaseStructure['S3']['歷史']) databaseStructure['S3']['歷史'] = {};
+        if (!databaseTypeCounts['S3']) databaseTypeCounts['S3'] = {};
+        if (!databaseTypeCounts['S3']['歷史']) databaseTypeCounts['S3']['歷史'] = {};
+        const target = databaseStructure['S3']['歷史'];
+        const countTarget = databaseTypeCounts['S3']['歷史'];
+        S3_HISTORY_PRESET_TOPICS.forEach(topic => {
             if (!target[topic]) target[topic] = new Set();
+            if (!countTarget[topic]) countTarget[topic] = {};
+            if (target[topic] instanceof Set && target[topic].size === 0) {
+                SECONDARY_HISTORY_DEFAULT_TYPES.forEach(t => {
+                    target[topic].add(t);
+                    if (!Number.isFinite(countTarget[topic][t])) countTarget[topic][t] = 0;
+                });
+            }
         });
     }
 
     async function loadFilterOptions() {
         const { data, error } = await dbClient.from('questions').select('grade, subject, topic, type');
         if (error) return;
+        databaseStructure = {};
+        databaseTypeCounts = {};
         data.forEach(row => {
             if (isBannedTopic(row.topic)) return;
             if (!databaseStructure[row.grade]) databaseStructure[row.grade] = {};
             if (!databaseStructure[row.grade][row.subject]) databaseStructure[row.grade][row.subject] = {};
+            if (!databaseTypeCounts[row.grade]) databaseTypeCounts[row.grade] = {};
+            if (!databaseTypeCounts[row.grade][row.subject]) databaseTypeCounts[row.grade][row.subject] = {};
             
             const isPrimary = PRIMARY_GRADES.includes(row.grade);
             
@@ -552,13 +682,19 @@
                     databaseStructure[row.grade][row.subject][row.topic] = new Set();
                 }
                 databaseStructure[row.grade][row.subject][row.topic].add('all'); // 標記為包含所有題型
+                if (!databaseTypeCounts[row.grade][row.subject][row.topic]) databaseTypeCounts[row.grade][row.subject][row.topic] = {};
+                databaseTypeCounts[row.grade][row.subject][row.topic].all =
+                    (databaseTypeCounts[row.grade][row.subject][row.topic].all || 0) + 1;
             } else {
                 // S1-S6：提取基礎 topic，按題型分組
-                const baseTopic = row.topic.replace(/\s*-\s*(選擇題|填充題|重組句子|重組段落|其他)$/, '');
+                const baseTopic = row.topic.replace(/\s*-\s*(選擇題|填充題|配對題|是非題|短問答|長問答|資料題|重組句子|重組段落|其他)$/, '');
                 if (!databaseStructure[row.grade][row.subject][baseTopic]) {
                     databaseStructure[row.grade][row.subject][baseTopic] = new Set();
                 }
                 databaseStructure[row.grade][row.subject][baseTopic].add(row.type);
+                if (!databaseTypeCounts[row.grade][row.subject][baseTopic]) databaseTypeCounts[row.grade][row.subject][baseTopic] = {};
+                databaseTypeCounts[row.grade][row.subject][baseTopic][row.type] =
+                    (databaseTypeCounts[row.grade][row.subject][baseTopic][row.type] || 0) + 1;
             }
         });
         ensurePresetTopics();
@@ -587,12 +723,111 @@
         } else {
             subjectSelect.innerHTML = subjects.map(s => `<option value="${s}">${s}</option>`).join('');
         }
+        updateHistoryBookUI();
+        enforceModeAvailabilityByGrade();
         updateTopicList();
+    }
+
+    function getHistoryBookStorageKey(grade) {
+        return `history_book_${String(grade || '').trim()}`;
+    }
+
+    function getSelectedHistoryBookId(grade) {
+        const select = document.getElementById('historyBookSelect');
+        const fromUI = select && select.value ? String(select.value) : '';
+        if (fromUI) return fromUI;
+        try { return String(localStorage.getItem(getHistoryBookStorageKey(grade)) || ''); } catch { return ''; }
+    }
+
+    function setSelectedHistoryBookId(grade, id) {
+        try { localStorage.setItem(getHistoryBookStorageKey(grade), String(id || '')); } catch {}
+    }
+
+    function getHistoryBooksForGrade(grade) {
+        const g = String(grade || '').trim();
+        const list = SECONDARY_HISTORY_BOOKS[g];
+        return Array.isArray(list) ? list : [];
+    }
+
+    function getActiveHistoryBookConfig() {
+        const g = document.getElementById('gradeSelect')?.value;
+        const s = document.getElementById('subjectSelect')?.value;
+        if (!g || !s) return null;
+        if (PRIMARY_GRADES.includes(g)) return null;
+        if (s !== '歷史') return null;
+        const books = getHistoryBooksForGrade(g);
+        if (books.length === 0) return null;
+        const selectedId = getSelectedHistoryBookId(g);
+        const hit = books.find(b => b.id === selectedId) || books[0];
+        return hit || null;
+    }
+
+    function updateHistoryBookUI() {
+        const g = document.getElementById('gradeSelect')?.value;
+        const s = document.getElementById('subjectSelect')?.value;
+        const row = document.getElementById('historyBookRow');
+        const select = document.getElementById('historyBookSelect');
+        if (!row || !select) return;
+        const isPrimary = PRIMARY_GRADES.includes(g);
+        const books = (!isPrimary && s === '歷史') ? getHistoryBooksForGrade(g) : [];
+        if (!books || books.length === 0) {
+            row.classList.add('hidden');
+            select.innerHTML = '';
+            return;
+        }
+        row.classList.remove('hidden');
+        select.innerHTML = books.map(b => `<option value="${escapeHtml(b.id)}">${escapeHtml(b.title)}</option>`).join('');
+        const selectedId = getSelectedHistoryBookId(g);
+        const hit = books.find(b => b.id === selectedId) || books[0];
+        select.value = hit.id;
+        setSelectedHistoryBookId(g, hit.id);
+    }
+
+    function enforceModeAvailabilityByGrade() {
+        const g = document.getElementById('gradeSelect').value;
+        const isPrimary = PRIMARY_GRADES.includes(g);
+        const balancedLabel = document.getElementById('modeBalancedLabel');
+        const manualInput = document.querySelector('input[name="questionMode"][value="manual"]');
+        const balancedInput = document.querySelector('input[name="questionMode"][value="balanced"]');
+        if (!balancedLabel || !manualInput || !balancedInput) return;
+
+        if (isPrimary) {
+            balancedLabel.classList.add('hidden');
+            balancedInput.checked = false;
+            manualInput.checked = true;
+        } else {
+            balancedLabel.classList.remove('hidden');
+        }
+        updateQuestionModeUI();
+    }
+
+    function getQuestionMode() {
+        const picked = document.querySelector('input[name="questionMode"]:checked');
+        return picked ? picked.value : 'manual';
+    }
+
+    function updateQuestionModeUI() {
+        const mode = getQuestionMode();
+        const balancedPanel = document.getElementById('balancedPanel');
+        if (mode === 'balanced') balancedPanel.classList.remove('hidden');
+        else balancedPanel.classList.add('hidden');
+        document.querySelectorAll('.manual-qty-control').forEach(el => {
+            if (mode === 'balanced') el.classList.add('hidden');
+            else el.classList.remove('hidden');
+        });
+        document.querySelectorAll('.topic-pick').forEach(el => {
+            if (mode === 'balanced') el.classList.remove('hidden');
+            else el.classList.add('hidden');
+        });
     }
 
     function updateTopicList() {
         const g = document.getElementById('gradeSelect').value;
         const s = document.getElementById('subjectSelect').value;
+        if (!PRIMARY_GRADES.includes(g) && s === '歷史') {
+            const sel = document.getElementById('historyBookSelect');
+            if (sel && sel.value) setSelectedHistoryBookId(g, sel.value);
+        }
         const topics = databaseStructure[g]?.[s];
         const topicsContainer = document.getElementById('topicsContainer');
         if (!topics || Object.keys(topics).length === 0) {
@@ -611,8 +846,9 @@
             topicsContainer.innerHTML = Array.from(allTopics).sort().map(t => `
                 <div class="topic-subrow" style="padding-left:12px;">
                     <span class="topic-name">${t}</span>
-                    <input type="number" min="0" max="40" value="0" class="topic-qty" data-topic="${t}" data-type="">
+                    <input type="number" min="0" max="40" value="0" class="topic-qty manual-qty-control" data-topic="${t}" data-type="">
                 </div>`).join('');
+            updateQuestionModeUI();
             return;
         }
         
@@ -620,26 +856,84 @@
         const typeLabels = {
             'MC': '選擇題',
             'FillBlank': '填充題',
+            'Matching': '配對題',
+            'TrueFalse': '是非題',
+            'ShortAnswer': '短問答',
+            'LongAnswer': '長問答',
+            'DataQuestion': '資料題',
+            'QA': '短問答',
+            '問答題': '短問答',
             'Rearrange': '重組句子',
             'RearrangeParagraph': '重組段落'
         };
         
+        function compareTopicOrder(a, b) {
+            const ma = String(a).match(/^課題(\d+)/);
+            const mb = String(b).match(/^課題(\d+)/);
+            if (ma && mb) {
+                const na = Number(ma[1]);
+                const nb = Number(mb[1]);
+                if (na !== nb) return na - nb;
+            } else if (ma) {
+                return -1;
+            } else if (mb) {
+                return 1;
+            }
+            return String(a).localeCompare(String(b), 'zh-HK');
+        }
+
+        const activeBook = getActiveHistoryBookConfig();
+        const allowedTopicSet = (activeBook && Array.isArray(activeBook.topics) && activeBook.topics.length > 0)
+            ? new Set(activeBook.topics.map(x => String(x).trim()).filter(Boolean))
+            : null;
+        const bookOrder = (activeBook && Array.isArray(activeBook.topics))
+            ? new Map(activeBook.topics.map((t, i) => [String(t).trim(), i]))
+            : null;
+
+        function compareWithBookOrder(a, b) {
+            if (bookOrder) {
+                const ia = bookOrder.get(String(a).trim());
+                const ib = bookOrder.get(String(b).trim());
+                const ha = Number.isFinite(ia);
+                const hb = Number.isFinite(ib);
+                if (ha && hb) return ia - ib;
+                if (ha) return -1;
+                if (hb) return 1;
+            }
+            return compareTopicOrder(a, b);
+        }
+
         let html = '';
-        Object.keys(topics).sort().forEach(baseTopic => {
-            const types = Array.from(topics[baseTopic]);
+        Object.keys(topics)
+            .filter(baseTopic => !allowedTopicSet || allowedTopicSet.has(String(baseTopic).trim()))
+            .sort(compareWithBookOrder)
+            .forEach(baseTopic => {
+            const types = Array.from(topics[baseTopic]).sort((a, b) => {
+                const oa = getTypeOrderIndex(a);
+                const ob = getTypeOrderIndex(b);
+                if (oa !== ob) return oa - ob;
+                return String(a).localeCompare(String(b), 'zh-HK');
+            });
             const groupId = `group-${baseTopic.replace(/\s+/g, '-')}`;
             
-            html += `<div class="topic-group-header" onclick="toggleTopicGroup('${groupId}')">
-                <span><span class="topic-toggle" id="${groupId}-toggle">▶</span> ${baseTopic}</span>
+            const mergedMembers = Array.isArray(SECONDARY_HISTORY_TOPIC_MERGE[baseTopic]) ? SECONDARY_HISTORY_TOPIC_MERGE[baseTopic] : null;
+            const mergedAttr = mergedMembers ? escapeHtml(JSON.stringify(mergedMembers)) : '';
+
+            html += `<div class="topic-group-header" onclick="toggleTopicGroup('${groupId}', event)">
+                <span class="topic-left">
+                    <input type="checkbox" class="topic-pick hidden" data-topic="${baseTopic}" data-topics="${mergedAttr}" onclick="event.stopPropagation()">
+                    <span><span class="topic-toggle" id="${groupId}-toggle">▶</span> ${baseTopic}</span>
+                </span>
                 <span style="font-size:0.75rem;color:#999;">${types.length} 種題型</span>
             </div>`;
             
             types.forEach(type => {
                 const typeLabel = typeLabels[type] || type;
+                const typeCount = databaseTypeCounts[g]?.[s]?.[baseTopic]?.[type] || 0;
                 html += `<div class="topic-subrow hidden" data-group="${groupId}">
-                    <span class="topic-type-label">${typeLabel}</span>
-                    <input type="number" min="0" max="40" value="0" class="topic-qty" 
-                           data-topic="${baseTopic}" data-type="${type}">
+                    <span class="topic-type-label">${typeLabel}（現有 ${typeCount} 題）</span>
+                    <input type="number" min="0" max="40" value="0" class="topic-qty manual-qty-control" 
+                           data-topic="${baseTopic}" data-topics="${mergedAttr}" data-type="${type}">
                 </div>`;
             });
 
@@ -652,9 +946,11 @@
         });
         
         topicsContainer.innerHTML = html;
+        updateQuestionModeUI();
     }
     
-    function toggleTopicGroup(groupId) {
+    function toggleTopicGroup(groupId, evt) {
+        if (evt && evt.target && evt.target.closest('.topic-pick')) return;
         const subrows = document.querySelectorAll(`[data-group="${groupId}"]`);
         const toggle = document.getElementById(`${groupId}-toggle`);
         const isExpanded = toggle.classList.contains('expanded');
@@ -680,8 +976,12 @@
         loading.style.display = 'block';
         container.innerHTML = '';
 
+        const g = document.getElementById('gradeSelect')?.value || '';
+        const s = document.getElementById('subjectSelect')?.value || '';
+        const subjectTitle = `${s || '科目'}科 綜合能力測試`;
+
         let finalHtml = `<div style="text-align:center;margin-bottom:40px;padding-bottom:16px;border-bottom:2px solid #1a1a2e;">
-            <h2 style="font-family:'Noto Serif TC',serif;font-size:1.8rem;font-weight:900;">中文科 綜合能力測試</h2>
+            <h2 style="font-family:'Noto Serif TC',serif;font-size:1.8rem;font-weight:900;">${escapeHtml(subjectTitle)}</h2>
             <p style="margin-top:10px;text-align:right;font-size:0.95rem;">姓名：___________ &nbsp;&nbsp; 班別：_______</p>
         </div>`;
 
@@ -727,47 +1027,68 @@
         let session;
         try { session = await ensureAnonymousAuth(); } catch(e) { console.error("匿名登入失敗:", e); }
         const uid = session?.user?.id ? String(session.user.id) : null;
-        const g = document.getElementById('gradeSelect').value;
-        const s = document.getElementById('subjectSelect').value;
+        // g / s 已在上面讀取
         const qtyInputs = document.querySelectorAll('.topic-qty');
         const BATCH_SIZE = 100, MAX_FETCH = 500, RANDOM_POOL_SIZE = 50;
         const usedQuestionKeys = new Set(), usedQuestionIds = new Set();
+        const mode = getQuestionMode();
 
         if (uid) {
             const { data: hist } = await dbClient.from('user_history').select('question_id').eq('user_id', uid).limit(5000);
             if (Array.isArray(hist)) hist.forEach(r => { if (r?.question_id != null) { usedQuestionIds.add(String(r.question_id)); usedQuestionKeys.add(String(r.question_id)); } });
         }
 
-        // 第一階段：收集所有選中的題目
-        const allPickedQuestions = [];
+        function clampQty(v, max = 120) {
+            let x = parseInt(v, 10);
+            if (!Number.isFinite(x)) x = 0;
+            return Math.max(0, Math.min(max, x));
+        }
 
-        for (let input of qtyInputs) {
-            let qty = parseInt(input.value);
-            if (!Number.isFinite(qty)) qty = 0;
-            qty = Math.max(0, Math.min(40, qty));
-            if (qty <= 0) continue;
-            const topic = input.dataset.topic;
-            const requestedType = input.dataset.type; // 新增：讀取指定的題型
-            if (isBannedTopic(topic)) continue;
+        function splitEvenly(total, n) {
+            if (n <= 0 || total <= 0) return [];
+            const base = Math.floor(total / n);
+            const rem = total % n;
+            return Array.from({ length: n }, (_, i) => base + (i < rem ? 1 : 0));
+        }
 
+        async function fetchPool(topicsOrTopic, requestedType, wantQty) {
+            const topicList = Array.isArray(topicsOrTopic)
+                ? topicsOrTopic.map(x => String(x || '').trim()).filter(Boolean)
+                : [String(topicsOrTopic || '').trim()].filter(Boolean);
+            if (topicList.length === 0) return [];
+
+            if (topicList.length > 1) {
+                let merged = [];
+                for (const t of topicList) {
+                    const sub = await fetchPool(t, requestedType, wantQty);
+                    merged = merged.concat(sub);
+                }
+                return merged;
+            }
+
+            const topic = topicList[0];
             let pool = [], offset = 0;
-            const fetchLimit = Math.min(MAX_FETCH, Math.max(Math.max(RANDOM_POOL_SIZE, qty * 3), BATCH_SIZE));
+            const fetchLimit = Math.min(MAX_FETCH, Math.max(Math.max(RANDOM_POOL_SIZE, wantQty * 3), BATCH_SIZE));
             const mergeP5And小五 = topic === '修辭手法辨別' && s === '中文' && (g === 'P5' || g === '小五');
             const isPrimary = PRIMARY_GRADES.includes(g);
-
+            const typeAliases = {
+                Matching: ['Matching', '配對', '配對題'],
+                TrueFalse: ['TrueFalse', '是非', '是非題'],
+                ShortAnswer: ['ShortAnswer', 'QA', '問答題', '短問答', '短答'],
+                LongAnswer: ['LongAnswer', '長問答', '長答'],
+                DataQuestion: ['DataQuestion', '資料題', '資料題目']
+            };
             while (pool.length < fetchLimit) {
                 let q;
-                
-                // P1-P6：舊邏輯，按 topic 查詢（不限 type）
                 if (isPrimary || !requestedType) {
                     q = dbClient.from('questions').select('*').eq('subject', s).eq('topic', topic);
-                } 
-                // S1-S6：新邏輯，按 topic + type 查詢
-                else {
-                    q = dbClient.from('questions').select('*').eq('subject', s).eq('type', requestedType);
-                    q = q.or(`topic.eq.${topic},topic.eq.${topic} - 選擇題,topic.eq.${topic} - 填充題,topic.eq.${topic} - 重組句子,topic.eq.${topic} - 重組段落`);
+                } else {
+                    q = dbClient.from('questions').select('*').eq('subject', s);
+                    const aliases = typeAliases[requestedType];
+                    if (Array.isArray(aliases)) q = q.in('type', aliases);
+                    else q = q.eq('type', requestedType);
+                    q = q.or(`topic.eq.${topic},topic.eq.${topic} - 選擇題,topic.eq.${topic} - 填充題,topic.eq.${topic} - 配對題,topic.eq.${topic} - 是非題,topic.eq.${topic} - 短問答,topic.eq.${topic} - 長問答,topic.eq.${topic} - 資料題,topic.eq.${topic} - 重組句子,topic.eq.${topic} - 重組段落`);
                 }
-                
                 if (mergeP5And小五) q = q.in('grade', ['P5', '小五']);
                 else q = q.eq('grade', g);
                 const { data, error } = await q.range(offset, offset + BATCH_SIZE - 1);
@@ -776,7 +1097,6 @@
                 offset += BATCH_SIZE;
                 if (data.length < BATCH_SIZE) break;
             }
-
             if (mergeP5And小五 && pool.length > 0) {
                 const seenId = new Set();
                 pool = pool.filter(row => {
@@ -787,45 +1107,117 @@
                     return true;
                 });
             }
+            return pool.filter(hasEnoughRearrangeWords);
+        }
 
-            if (pool.length === 0) continue;
-            pool = pool.filter(hasEnoughRearrangeWords);
-            if (pool.length === 0) continue;
+        function pushPickedFromPool(pool, qty, topic, out) {
+            if (qty <= 0 || !Array.isArray(pool) || pool.length === 0) return 0;
             const shuffled = shuffleInPlace([...pool]);
-            const picked = [];
-
-            if (topic === '修辭手法辨別') {
-                const seenRhetoricAnswers = new Set();
-                for (const q of shuffled) {
+            const before = out.length;
+            const seenRhetoricAnswers = topic === '修辭手法辨別' ? new Set() : null;
+            for (const q of shuffled) {
+                const key = getQuestionKey(q);
+                const qid = (q && (typeof q.id === 'number' || typeof q.id === 'string')) ? String(q.id) : null;
+                if (qid && usedQuestionIds.has(qid)) continue;
+                if (usedQuestionKeys.has(key)) continue;
+                if (seenRhetoricAnswers) {
                     const ans = String(q.answer ?? '').trim();
-                    if (!ans) continue;
-                    if (seenRhetoricAnswers.has(ans)) continue;
-                    const key = getQuestionKey(q);
-                    const qid = (q && (typeof q.id === 'number' || typeof q.id === 'string')) ? String(q.id) : null;
-                    if (qid && usedQuestionIds.has(qid)) continue;
-                    if (usedQuestionKeys.has(key)) continue;
-                    usedQuestionKeys.add(key);
-                    if (qid) usedQuestionIds.add(qid);
+                    if (!ans || seenRhetoricAnswers.has(ans)) continue;
                     seenRhetoricAnswers.add(ans);
-                    picked.push(q);
-                    if (picked.length >= qty) break;
                 }
-            } else {
-                for (const q of shuffled) {
-                    const key = getQuestionKey(q);
-                    const qid = (q && (typeof q.id === 'number' || typeof q.id === 'string')) ? String(q.id) : null;
-                    if (qid && usedQuestionIds.has(qid)) continue;
-                    if (usedQuestionKeys.has(key)) continue;
-                    usedQuestionKeys.add(key);
-                    if (qid) usedQuestionIds.add(qid);
-                    picked.push(q);
-                    if (picked.length >= qty) break;
-                }
+                usedQuestionKeys.add(key);
+                if (qid) usedQuestionIds.add(qid);
+                out.push(q);
+                if (out.length - before >= qty) break;
+            }
+            return out.length - before;
+        }
+
+        // 第一階段：收集所有選中的題目
+        const allPickedQuestions = [];
+        if (mode === 'manual') {
+            for (let input of qtyInputs) {
+                let qty = clampQty(input.value, 40);
+                if (qty <= 0) continue;
+                const topic = input.dataset.topic;
+                let topicList = null;
+                try {
+                    const raw = input.dataset.topics;
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed) && parsed.length > 0) topicList = parsed;
+                    }
+                } catch {}
+                const requestedType = input.dataset.type;
+                if (isBannedTopic(topic)) continue;
+                const pool = await fetchPool(topicList || topic, requestedType, qty);
+                if (pool.length === 0) continue;
+                pushPickedFromPool(pool, qty, topic, allPickedQuestions);
+            }
+        } else {
+            const selectedTopics = Array.from(document.querySelectorAll('.topic-pick:checked'))
+                .map(el => {
+                    const display = String(el.dataset.topic || '').trim();
+                    let members = null;
+                    try {
+                        const raw = el.dataset.topics;
+                        if (raw) {
+                            const parsed = JSON.parse(raw);
+                            if (Array.isArray(parsed) && parsed.length > 0) members = parsed;
+                        }
+                    } catch {}
+                    return { display, members };
+                })
+                .filter(x => x.display);
+            const uniqTopics = [];
+            const uniqTopicKey = new Set();
+            selectedTopics.forEach(t => {
+                const key = t.display;
+                if (uniqTopicKey.has(key)) return;
+                uniqTopicKey.add(key);
+                uniqTopics.push(t);
+            });
+            if (uniqTopics.length === 0) {
+                loading.style.display = 'none';
+                alert('請先剔選至少一個課題。');
+                return;
             }
 
-            if (picked.length === 0) continue;
+            const typeTotals = [
+                { type: 'MC', total: clampQty(document.getElementById('totalMcInput')?.value, 120) },
+                { type: 'FillBlank', total: clampQty(document.getElementById('totalFillBlankInput')?.value, 120) },
+                { type: 'Matching', total: clampQty(document.getElementById('totalMatchingInput')?.value, 120) },
+                { type: 'TrueFalse', total: clampQty(document.getElementById('totalTrueFalseInput')?.value, 120) },
+                { type: 'ShortAnswer', total: clampQty(document.getElementById('totalShortAnswerInput')?.value, 120) },
+                { type: 'LongAnswer', total: clampQty(document.getElementById('totalLongAnswerInput')?.value, 120) },
+                { type: 'DataQuestion', total: clampQty(document.getElementById('totalDataQuestionInput')?.value, 120) }
+            ].filter(x => x.total > 0);
+            if (typeTotals.length === 0) {
+                loading.style.display = 'none';
+                alert('請先輸入至少一種題型的總題數。');
+                return;
+            }
 
-            allPickedQuestions.push(...picked);
+            for (const { type, total } of typeTotals) {
+                const plan = splitEvenly(total, uniqTopics.length);
+                let needFill = 0;
+                for (let i = 0; i < uniqTopics.length; i++) {
+                    const item = uniqTopics[i];
+                    const targetQty = plan[i];
+                    if (targetQty <= 0) continue;
+                    const pool = await fetchPool(item.members || item.display, type, targetQty);
+                    const picked = pushPickedFromPool(pool, targetQty, item.display, allPickedQuestions);
+                    if (picked < targetQty) needFill += (targetQty - picked);
+                }
+                if (needFill > 0) {
+                    let mergedPool = [];
+                    for (const item of uniqTopics) {
+                        const pool = await fetchPool(item.members || item.display, type, needFill);
+                        mergedPool = mergedPool.concat(pool);
+                    }
+                    pushPickedFromPool(mergedPool, needFill, '', allPickedQuestions);
+                }
+            }
         }
 
         // 第二階段：按題型分組
@@ -840,13 +1232,27 @@
         const typeLabels = {
             'MC': '選擇題',
             'FillBlank': '填充題',
+            'TrueFalse': '是非題',
+            'Matching': '配對題',
+            'ShortAnswer': '短問答',
+            'LongAnswer': '長問答',
+            'DataQuestion': '資料題',
+            'QA': '短問答',
+            '問答題': '短問答',
             'Rearrange': '重組句子',
             'RearrangeParagraph': '重組段落',
             'Other': '其他題型'
         };
 
-        for (const [type, questions] of Object.entries(questionsByType)) {
-            if (questions.length === 0) continue;
+        const orderedTypeEntries = Object.entries(questionsByType).sort((a, b) => {
+            const oa = getTypeOrderIndex(a[0]);
+            const ob = getTypeOrderIndex(b[0]);
+            if (oa !== ob) return oa - ob;
+            return String(a[0]).localeCompare(String(b[0]), 'zh-HK');
+        });
+
+        for (const [type, questions] of orderedTypeEntries) {
+            if (!questions || questions.length === 0) continue;
             
             sectionIdx += 1;
             if (customWords && sectionIdx === 1) sectionIdx = 2;
@@ -872,7 +1278,15 @@
                 </div>`;
             }
             
-            questions.forEach(q => { finalHtml += renderUniversal(q, globalIdx++); });
+            if (type === 'Matching') {
+                const matchingGroups = splitMatchingGroups(questions, 5, 10);
+                matchingGroups.forEach(chunk => {
+                    finalHtml += renderMatchingSectionBlock(chunk, globalIdx);
+                    globalIdx += chunk.length;
+                });
+            } else {
+                questions.forEach(q => { finalHtml += renderUniversal(q, globalIdx++); });
+            }
         }
 
         // 寫入歷史
@@ -889,6 +1303,92 @@
         document.getElementById('downloadStudentBtn').classList.remove('hidden');
         document.getElementById('downloadTeacherBtn').classList.remove('hidden');
         loading.style.display = 'none';
+    }
+
+    function splitMatchingGroups(questions, minPerGroup = 5, maxPerGroup = 10) {
+        const list = Array.isArray(questions) ? questions : [];
+        const n = list.length;
+        if (n === 0) return [];
+        if (n <= maxPerGroup) return [list];
+        if (minPerGroup <= 0 || maxPerGroup < minPerGroup) return [list];
+
+        // 先以「每組不超過 max」估算組數，再保證每組不少於 min。
+        let groupCount = Math.ceil(n / maxPerGroup);
+        while (groupCount > 1 && Math.floor(n / groupCount) < minPerGroup) groupCount -= 1;
+
+        const base = Math.floor(n / groupCount);
+        const rem = n % groupCount;
+        const groups = [];
+        let offset = 0;
+        for (let i = 0; i < groupCount; i++) {
+            const size = base + (i < rem ? 1 : 0);
+            groups.push(list.slice(offset, offset + size));
+            offset += size;
+        }
+        return groups.filter(g => g.length > 0);
+    }
+
+    function renderMatchingSectionBlock(questions, startIdx) {
+        if (!Array.isArray(questions) || questions.length === 0) return '';
+        const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        const stripOptPrefix = (s) => String(s ?? '').replace(/^[A-Za-z]\.\s*/, '').trim();
+        const stripMatchPrefix = (s) => String(s ?? '').replace(/^請將題目與正確答案配對[:：]\s*/, '').trim();
+
+        const leftItems = questions.map((q, i) => {
+            let opts = [];
+            try { opts = typeof q.options === 'string' ? JSON.parse(q.options) : q.options; } catch {}
+            if (!Array.isArray(opts)) opts = [];
+            const answerLetter = String(q.answer ?? '').trim().charAt(0).toUpperCase();
+            const answerIdx = answerLetter ? letters.indexOf(answerLetter) : -1;
+            let answerText = (answerIdx >= 0 && answerIdx < opts.length) ? stripOptPrefix(opts[answerIdx]) : '';
+            if (!answerText && opts.length > 0) answerText = stripOptPrefix(opts[0]);
+            if (!answerText) answerText = String(q.answer ?? '').trim();
+            return {
+                id: i,
+                num: startIdx + i,
+                questionText: stripMatchPrefix(q.question_text),
+                answerText
+            };
+        });
+
+        const rightItems = shuffleInPlace(leftItems.map(item => ({ id: item.id, text: item.answerText })));
+        const answerLetterById = new Map();
+        rightItems.forEach((item, idx) => answerLetterById.set(item.id, letters[idx]));
+
+        const leftHtml = leftItems.map(item =>
+            `<div style="margin-bottom:8px;line-height:1.8;"><strong>${item.num}.</strong> ${escapeHtml(item.questionText)}</div>`
+        ).join('');
+        const rightHtml = rightItems.map((item, idx) =>
+            `<div style="margin-bottom:8px;line-height:1.8;"><strong>${letters[idx]}.</strong> ${escapeHtml(item.text)}</div>`
+        ).join('');
+        const answerLineHtml = leftItems.map(item =>
+            `<div style="line-height:1.9;"><strong>${item.num}.</strong> ________</div>`
+        ).join('');
+        const answerKeyHtml = leftItems.map(item =>
+            `<span style="display:inline-block;min-width:72px;"><strong>${item.num}</strong>-${answerLetterById.get(item.id)}</span>`
+        ).join('');
+
+        return `<div class="question-item" style="margin-bottom:26px;">
+            <div style="font-size:1rem;color:#555;margin-bottom:10px;">請將左欄題目與右欄答案配對，並在下方填上答案字母。</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px 26px;">
+                <div style="border:1px solid #ddd;border-radius:8px;padding:12px;background:#fff;">
+                    <div style="font-weight:700;margin-bottom:8px;">左欄（題目）</div>
+                    ${leftHtml}
+                </div>
+                <div style="border:1px solid #ddd;border-radius:8px;padding:12px;background:#fff;">
+                    <div style="font-weight:700;margin-bottom:8px;">右欄（答案）</div>
+                    ${rightHtml}
+                </div>
+            </div>
+            <div style="margin-top:12px;border:1px solid #ddd;border-radius:8px;padding:12px;background:#fff;">
+                <div style="font-weight:700;margin-bottom:8px;">作答區（填 A-${letters[Math.max(0, leftItems.length - 1)]}）</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 20px;">${answerLineHtml}</div>
+            </div>
+            <div class="answer-block" style="margin-top:12px;padding:10px 14px;background:#f0f7ff;border-left:4px solid #1a4a8a;border-radius:4px;">
+                <span style="font-weight:700;color:#1a4a8a;">💡 配對答案：</span>
+                <div style="margin-top:6px;line-height:1.9;">${answerKeyHtml}</div>
+            </div>
+        </div>`;
     }
 
     function renderUniversal(q, idx) {
@@ -926,6 +1426,16 @@
             const nums = ['①','②','③','④','⑤','⑥','⑦','⑧'];
             body = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 32px;margin-top:10px;">${sents.map((s,i)=>`<div style="display:flex;align-items:flex-start;gap:8px;border-bottom:1px solid #eee;padding-bottom:6px;"><span style="font-weight:700;color:#1a4a8a;">${nums[i]}</span><p style="font-size:1rem;">${s}</p></div>`).join('')}</div>
                     <div style="margin-top:20px;display:flex;align-items:center;gap:4px;font-weight:700;">正確次序：${sents.map(()=>`<div style="border:2px solid #1a1a2e;width:32px;height:32px;"></div>`).join('<span style="margin:0 4px;">→</span>')}</div>`;
+        } else if (q.type === 'TrueFalse') {
+            body = `<div style="font-size:1.1rem;line-height:1.9;">${formatQuestionHtml(q.question_text, q.topic)}</div>
+                    <div style="margin-top:12px;font-size:1rem;line-height:1.8;">作答：____________（是 / 非）</div>`;
+        } else if (q.type === 'LongAnswer') {
+            body = `<div style="font-size:1.1rem;line-height:1.9;">${formatQuestionHtml(q.question_text, q.topic)}</div>
+                    <div style="margin-top:12px;">
+                        <div style="border-bottom:1.8px solid #1a1a2e;height:30px;"></div>
+                        <div style="border-bottom:1.8px solid #1a1a2e;height:30px;margin-top:6px;"></div>
+                        <div style="border-bottom:1.8px solid #1a1a2e;height:30px;margin-top:6px;"></div>
+                    </div>`;
         } else if (q.type === 'MC' || (q.options && q.options.length > 0)) {
             try {
                 const opts = typeof q.options === 'string' ? JSON.parse(q.options) : q.options;
@@ -980,6 +1490,8 @@
         await migratePendingHistoryIfAny();
         await updateAuthUI();
         await loadFilterOptions();
+        updateHistoryBookUI();
+        enforceModeAvailabilityByGrade();
     };
 </script>
 </body>
